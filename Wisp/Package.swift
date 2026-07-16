@@ -16,7 +16,19 @@ let package = Package(
         // needs (SwiftUI, AppKit, ScreenCaptureKit, AVFoundation, Speech) ships with the OS.
         .executableTarget(
             name: "Wisp",
-            path: "Sources/Wisp"
+            path: "Sources/Wisp",
+            linkerSettings: [
+                // Embed an Info.plist into the bare executable (__TEXT,__info_plist). TCC reads the
+                // usage-description strings from here — without them, permission-gated APIs like
+                // SFSpeechRecognizer.requestAuthorization are silently ignored and the app never
+                // even appears in the System Settings privacy panes.
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "Supporting/Info.plist"
+                ])
+            ]
         )
     ]
 )

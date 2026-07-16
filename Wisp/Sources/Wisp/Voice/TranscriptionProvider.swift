@@ -53,10 +53,9 @@ final class ParakeetSidecarProvider: TranscriptionProvider {
     func startTranscribing() -> AsyncStream<TranscriptUpdate> {
         AsyncStream { continuation in
             let launchedProcess = Process()
-            // Use `python3` from PATH; the sidecar itself imports parakeet-mlx and reports cleanly
-            // if it's not installed.
+            // Prefer the sidecar's own venv python (which has parakeet-mlx); `python3` otherwise.
             launchedProcess.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            launchedProcess.arguments = ["python3", sidecarScriptPath]
+            launchedProcess.arguments = [WispConfig.sidecarPythonExecutablePath, sidecarScriptPath]
 
             let standardOutputPipe = Pipe()
             let standardErrorPipe = Pipe()

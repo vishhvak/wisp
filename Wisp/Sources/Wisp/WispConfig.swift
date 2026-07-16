@@ -30,6 +30,19 @@ enum WispConfig {
         return "../voice-sidecar/parakeet_stt.py"
     }
 
+    // The Python interpreter used to run the sidecar. Prefers the sidecar's own virtualenv
+    // (voice-sidecar/.venv — where `pip install -r requirements.txt` puts parakeet-mlx) and falls
+    // back to `python3` from PATH. WHY: the system python almost never has parakeet-mlx; a
+    // dedicated venv keeps the model stack isolated and detectable.
+    static var sidecarPythonExecutablePath: String {
+        let sidecarDirectory = (parakeetSidecarScriptPath as NSString).deletingLastPathComponent
+        let venvPythonPath = "\(sidecarDirectory)/.venv/bin/python3"
+        if FileManager.default.isExecutableFile(atPath: venvPythonPath) {
+            return venvPythonPath
+        }
+        return "python3"
+    }
+
     // The Claude model the app requests through the Worker's /chat route. Fable 5 is the default
     // per the design spec (Opus reserved for the heavier draw/point tutor path).
     static let defaultClaudeModel = "claude-fable-5"

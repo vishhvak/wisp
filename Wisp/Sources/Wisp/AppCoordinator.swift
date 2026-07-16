@@ -473,12 +473,13 @@ final class VoiceEngine {
 
     // Starts a transcription session, forwarding partial/final transcripts to the coordinator.
     // Resolves the Parakeet sidecar first, falling back to Apple Speech if it fails to launch.
-    func beginListeningSession() {
+    // `preferredProvider` lets the live-fallback path restart the session on a specific engine.
+    func beginListeningSession(preferredProvider: TranscriptionProvider? = nil) {
         // Don't start a second overlapping session.
         guard activeListeningTask == nil else { return }
         didReceiveFinalTranscriptThisSession = false
 
-        let resolvedProvider = resolveTranscriptionProvider()
+        let resolvedProvider = preferredProvider ?? resolveTranscriptionProvider()
         activeTranscriptionProvider = resolvedProvider
         WispLog.log("voice", "listening session started (provider: \(type(of: resolvedProvider)))")
 
@@ -499,6 +500,19 @@ final class VoiceEngine {
             // The provider's stream finished (utterance ended or provider stopped).
             WispLog.log("voice", "listening session ended (receivedAnyUpdate: \(receivedAnyUpdate))")
             self.activeListeningTask = nil
+
+            // LIVE fallback: if the preferred provider died instantly with zero output (e.g. the
+            // Parakeet sidecar exists but its Python package/model is broken) while the user is
+            // still holding the key, restart the session on Apple Speech so the hold still works —
+            // don't make the user re-press to discover a different engine.
+            if !receivedAnyUpdate,
+               !(resolvedProvider is AppleSpeechProvider),
+               !Task.isCancelled,
+               self.appCoordinator.companionState == .listening {
+                WispLog.log("voice", "provider produced nothing — retrying this session with Apple Speech")
+                self.activeTranscriptionProvider = nil
+                self.beginListeningSession(preferredProvider: AppleSpeechProvider())
+            }
         }
     }
 

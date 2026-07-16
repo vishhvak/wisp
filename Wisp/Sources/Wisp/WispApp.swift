@@ -40,6 +40,15 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         // .accessory = menu-bar/background app with NO dock icon and no default main menu window.
         NSApp.setActivationPolicy(.accessory)
 
+        // Register with Speech Recognition up front (rather than deep inside a fallback session) so
+        // the system prompt fires and Wisp appears in the Settings pane's app list immediately.
+        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+            WispLog.log("voice", "requesting Speech Recognition authorization at launch…")
+            SFSpeechRecognizer.requestAuthorization { grantedStatus in
+                WispLog.log("voice", "Speech Recognition authorization at launch: \(grantedStatus.rawValue) (3=authorized)")
+            }
+        }
+
         // Bring up the overlay and start listening for hotkeys.
         appCoordinator.start()
     }
@@ -157,11 +166,20 @@ struct CompanionMenuContent: View {
     }
 
     // One permission row: a green check when granted; a tappable amber warning that deep-links into
-    // the matching System Settings pane when not.
+    // the matching System Settings pane when not. Speech Recognition is special: if it has never
+    // been REQUESTED, opening the pane shows an empty list — so fire the authorization request
+    // first (which registers Wisp there and shows the system prompt), then open the pane.
     private func permissionRow(name: String, isGranted: Bool, settingsPane: String, note: String) -> some View {
         Button {
-            guard !isGranted,
-                  let paneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(settingsPane)") else { return }
+            guard !isGranted else { return }
+            if settingsPane == "Privacy_SpeechRecognition",
+               SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+                SFSpeechRecognizer.requestAuthorization { grantedStatus in
+                    WispLog.log("voice", "Speech Recognition authorization via menu: \(grantedStatus.rawValue) (3=authorized)")
+                }
+                return
+            }
+            guard let paneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(settingsPane)") else { return }
             NSWorkspace.shared.open(paneURL)
         } label: {
             HStack(spacing: DS.Spacing.small) {
