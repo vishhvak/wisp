@@ -1,26 +1,29 @@
 import AppKit
 import SwiftUI
 
-// Owns the notch-anchored HUD panel — a small, non-activating, display-only panel that hangs from
-// the top-center of the built-in display, directly under the camera notch. On displays WITHOUT a
-// notch it falls back to plain top-center. Per the app-bundle RE, the notch HUD is the shipped app's
-// primary state surface (`NotchRootView` / `notch_collapsed` / `notch_expanded`), with the cursor
-// glyph and task cards as satellites.
+// Owns the notch "island" HUD — Wisp's primary state surface, per the shipped app's RE
+// (`NotchAgentSurface` / `notch_collapsed` / `notch_expanded`).
+//
+// The trick that makes it read as a Dynamic Island rather than "a pill near the notch": the island
+// is PURE BLACK and rendered flush with the physical notch cutout, so when it grows, the hardware
+// itself appears to expand. To let that growth spring smoothly, the panel is NOT resized to fit
+// content (AppKit frame changes can't interpolate with SwiftUI springs) — instead the panel is a
+// fixed, generously-sized, transparent canvas centered on the notch, and the island morphs freely
+// inside it with SwiftUI animation.
 @MainActor
 final class NotchHUDController {
     private unowned let appCoordinator: AppCoordinator
 
     private var notchPanel: NSPanel?
-    // Hosting controller with preferred-content-size sizing so the panel tracks the HUD's collapsed
-    // vs expanded size and can be re-centered under the notch as it grows/shrinks.
-    private var notchHostingController: NSHostingController<NotchHUDView>?
-    private var notchContentSizeObservation: NSKeyValueObservation?
+
+    // The fixed canvas the island animates within. Wide enough for the expanded island, tall enough
+    // for the below-notch text area; everything outside the island stays fully transparent.
+    private static let canvasSize = NSSize(width: 640, height: 200)
 
     init(appCoordinator: AppCoordinator) {
         self.appCoordinator = appCoordinator
     }
 
-    // Creates (once) and shows the notch HUD panel on the notched (or main) display.
     func show() {
         if notchPanel == nil {
             notchPanel = buildNotchPanel()
@@ -35,8 +38,11 @@ final class NotchHUDController {
     // MARK: - Panel construction
 
     private func buildNotchPanel() -> NSPanel {
+        let anchorScreen = notchedOrFallbackScreen()
+        let notchMetrics = Self.measureNotch(on: anchorScreen)
+
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 160, height: 40),
+            contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -45,55 +51,61 @@ final class NotchHUDController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        // Above the menu bar so it visually hangs from the notch (the menu bar sits at .mainMenu level).
+        // Above the menu bar (.statusBar) so the island's ears can sit OVER the menu-bar strip
+        // beside the notch, exactly like the hardware growing outward.
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        // The HUD is display-only — never intercept clicks, never steal focus.
+        // Display-only: never intercept clicks, never steal focus.
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
 
-        let hostingController = NSHostingController(rootView: NotchHUDView(appCoordinator: appCoordinator))
-        hostingController.sizingOptions = [.preferredContentSize]
-        panel.contentViewController = hostingController
-        self.notchHostingController = hostingController
+        let hostingView = NSHostingView(
+            rootView: NotchHUDView(
+                appCoordinator: appCoordinator,
+                notchWidth: notchMetrics.width,
+                notchHeight: notchMetrics.height
+            )
+        )
+        hostingView.frame = NSRect(origin: .zero, size: Self.canvasSize)
+        panel.contentView = hostingView
 
-        // Re-center + re-anchor under the notch whenever the HUD's size changes (collapse ⇄ expand).
-        notchContentSizeObservation = hostingController.observe(\.preferredContentSize, options: [.new, .initial]) { [weak self] _, _ in
-            Task { @MainActor in
-                self?.resizeAndAnchorNotchPanel()
-            }
-        }
+        // Center the fixed canvas on the notch, top edge flush with the display's top edge.
+        let screenFrame = anchorScreen.frame
+        panel.setFrame(
+            NSRect(
+                x: screenFrame.midX - Self.canvasSize.width / 2,
+                y: screenFrame.maxY - Self.canvasSize.height,
+                width: Self.canvasSize.width,
+                height: Self.canvasSize.height
+            ),
+            display: true
+        )
 
         return panel
     }
 
-    // Resizes the panel to the HUD's content size and centers it horizontally under the notch, with
-    // its top edge flush to the very top of the display so it appears to hang from the notch.
-    private func resizeAndAnchorNotchPanel() {
-        guard let notchPanel, let notchHostingController else { return }
+    // MARK: - Notch geometry
 
-        let preferredContentSize = notchHostingController.preferredContentSize
-        guard preferredContentSize.width > 1, preferredContentSize.height > 1 else { return }
+    // The physical notch's size on this screen. Width comes from the gap between the auxiliary
+    // top-left/right areas (the usable menu-bar strips beside the notch); height from the top
+    // safe-area inset. On displays without a notch both are nil/0 → we return width 0 and a
+    // menu-bar-ish height, and the view renders a floating top-center pill instead of an island.
+    static func measureNotch(on screen: NSScreen) -> (width: CGFloat, height: CGFloat) {
+        let safeAreaTopInset = screen.safeAreaInsets.top
 
-        let anchorScreen = notchedOrFallbackScreen()
-        let anchorScreenFrame = anchorScreen.frame
+        if let leftArea = screen.auxiliaryTopLeftArea,
+           let rightArea = screen.auxiliaryTopRightArea,
+           safeAreaTopInset > 0 {
+            let notchWidth = screen.frame.width - leftArea.width - rightArea.width
+            return (width: max(notchWidth, 0), height: safeAreaTopInset)
+        }
 
-        // Center horizontally; pin the TOP edge to the display's top (origin is bottom-left, so the
-        // panel's origin.y = top - height).
-        let panelOriginX = anchorScreenFrame.midX - (preferredContentSize.width / 2)
-        let panelOriginY = anchorScreenFrame.maxY - preferredContentSize.height
-
-        notchPanel.setFrame(
-            NSRect(x: panelOriginX, y: panelOriginY, width: preferredContentSize.width, height: preferredContentSize.height),
-            display: true
-        )
+        // No notch: height approximates the menu bar so the fallback pill hangs naturally below it.
+        return (width: 0, height: 30)
     }
 
-    // Finds the built-in notched display (the one with a non-zero top safe-area inset), or falls back
-    // to the main screen (top-center) on Macs / setups without a notch.
     private func notchedOrFallbackScreen() -> NSScreen {
-        // A notch reserves space at the top of the screen, surfaced as safeAreaInsets.top > 0.
         if let notchedScreen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
             return notchedScreen
         }
