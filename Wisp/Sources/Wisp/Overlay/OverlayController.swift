@@ -277,6 +277,16 @@ struct TeachingOverlayRootView: View {
                 pointerColor: appCoordinator.cursorGlyphColor
             )
 
+            // The session-start drip (notch → cursor). While it flies, the standing glyph stays
+            // hidden; on arrival the coordinator clears the flight and the glyph takes over.
+            if let activeDripFlight = appCoordinator.activeDripFlight {
+                DripTransitionView(
+                    dripFlight: activeDripFlight,
+                    dripColor: appCoordinator.cursorGlyphColor,
+                    onArrival: { appCoordinator.completeDripFlight() }
+                )
+            }
+
             CursorGlyphLayer(appCoordinator: appCoordinator, screenFrame: screenFrame)
         }
         // This layer must never intercept clicks — clicks belong to the app below.
@@ -312,7 +322,9 @@ private struct CursorGlyphLayer: View {
     private let cursorGlyphOffset = CGSize(width: 14, height: 16)
 
     var body: some View {
-        if let cursorPositionOnThisScreen = cursorPositionInScreenSpace(
+        // While a drip is in flight the droplet IS the companion — the standing glyph waits.
+        if appCoordinator.activeDripFlight == nil,
+           let cursorPositionOnThisScreen = cursorPositionInScreenSpace(
             globalPoint: appCoordinator.cursorGlobalBottomLeftPoint,
             screenFrame: screenFrame
         ) {

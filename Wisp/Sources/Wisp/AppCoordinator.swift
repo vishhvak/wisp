@@ -33,6 +33,11 @@ final class AppCoordinator: ObservableObject {
     // annotation. nil hides the pointer (no active teaching target).
     @Published private(set) var agentPointerTarget: CGPoint?
 
+    // The in-flight session-start drip (notch → cursor), or nil. While set, the overlay renders
+    // the liquid drip and suppresses the cursor glyph; on arrival the glyph takes over.
+    @Published private(set) var activeDripFlight: DripFlight?
+    private var dripFlightCounter = 0
+
     // The currently-visible completion toast message, if any.
     @Published private(set) var activeToastMessage: String?
 
@@ -171,7 +176,48 @@ final class AppCoordinator: ObservableObject {
     func transition(to newState: CompanionState) {
         guard companionState != newState else { return }
         WispLog.log("state", "\(companionState) → \(newState)")
+
+        // The Drip (DESIGN.md signature move): entering a listening session from idle sends a
+        // droplet of light from the notch to the cursor, which then IS the glyph.
+        if companionState == .idle && newState == .listening {
+            beginDripFlightIfPossible()
+        }
+        // Leaving listening/responding clears any in-flight drip so a stray flight can't linger.
+        if newState == .idle {
+            activeDripFlight = nil
+        }
+
         companionState = newState
+    }
+
+    // Starts a drip flight when the stars align: motion allowed, a notched display exists, and the
+    // cursor is on that display (a drip across monitors would be nonsense). Otherwise the glyph
+    // simply appears, which is the correct reduced/no-notch behavior.
+    private func beginDripFlightIfPossible() {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        guard let notchedScreen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }),
+              notchedScreen == NSScreen.main,
+              notchedScreen.frame.contains(cursorGlobalBottomLeftPoint) else {
+            return
+        }
+
+        // The notch's bottom-center lip, converted into the overlay's top-left-origin space.
+        let dripAnchorPoint = CGPoint(
+            x: notchedScreen.frame.width / 2,
+            y: notchedScreen.safeAreaInsets.top + 2
+        )
+        dripFlightCounter += 1
+        activeDripFlight = DripFlight(
+            anchorPoint: dripAnchorPoint,
+            targetPoint: cursorGlyphPositionInOverlay,
+            flightNumber: dripFlightCounter,
+            startDate: Date()
+        )
+    }
+
+    // The drip arrived at the cursor — hand off to the standing glyph.
+    func completeDripFlight() {
+        activeDripFlight = nil
     }
 
     // MARK: - Transcript handling (called by VoiceEngine)
