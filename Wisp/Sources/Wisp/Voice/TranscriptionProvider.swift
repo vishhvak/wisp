@@ -40,6 +40,21 @@ final class ParakeetWarmEngine: TranscriptionProvider {
     private var respawnAttemptCount = 0
     private static let maximumRespawnAttempts = 3
 
+    // Microphone capture lives HERE, in the Swift process, because this is the process that
+    // actually holds the mic TCC grant. The python child capturing for itself received pure
+    // digital silence (verified: peak=0.0000 across a full session) — children don't reliably
+    // inherit microphone authorization. Swift taps the mic, converts to the model's format
+    // (16kHz mono float32), and streams base64 PCM lines to the daemon.
+    private let captureAudioEngine = AVAudioEngine()
+    private var pcmFormatConverter: AVAudioConverter?
+    private var isCapturingMicrophone = false
+    private static let daemonPCMFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32,
+        sampleRate: 16000,
+        channels: 1,
+        interleaved: true
+    )!
+
     // Whether the daemon can plausibly run at all: its script exists and a python3 is available
     // (preferring the sidecar's venv). Checked before choosing this engine.
     static func isSidecarRunnable(sidecarScriptPath: String = WispConfig.parakeetSidecarScriptPath) -> Bool {
@@ -164,26 +179,100 @@ final class ParakeetWarmEngine: TranscriptionProvider {
                 return
             }
             if !modelWasReadyAtStart {
-                // Command is queued in the pipe; the daemon opens the mic as soon as the model
-                // finishes loading. Only possible in the first seconds after app launch.
-                WispLog.log("voice", "session started before model ready — daemon will open mic once warm")
+                // Commands queue in the pipe; the daemon accepts audio as soon as the model loads.
+                WispLog.log("voice", "session started before model ready — daemon will accept audio once warm")
             }
             sendCommand("start")
+
+            do {
+                try beginMicrophoneCapture()
+            } catch {
+                WispLog.log("voice", "microphone capture failed to start: \(error.localizedDescription)")
+                sendCommand("stop")
+            }
         }
     }
 
     func stopTranscribing() {
+        endMicrophoneCapture()
         sendCommand("stop")
         // The daemon replies: (optional) {"final": …} then {"status": "stopped"} — the stopped
         // status finishes the session stream, so the final always drains first. No process kill.
     }
 
+    // MARK: Microphone capture (Swift-side, TCC-correct)
+
+    private func beginMicrophoneCapture() throws {
+        guard !isCapturingMicrophone else { return }
+
+        let microphoneInputNode = captureAudioEngine.inputNode
+        let hardwareInputFormat = microphoneInputNode.outputFormat(forBus: 0)
+        pcmFormatConverter = AVAudioConverter(from: hardwareInputFormat, to: Self.daemonPCMFormat)
+
+        microphoneInputNode.installTap(onBus: 0, bufferSize: 4096, format: hardwareInputFormat) { [weak self] capturedBuffer, _ in
+            self?.convertAndStreamToDaemon(capturedBuffer)
+        }
+
+        captureAudioEngine.prepare()
+        try captureAudioEngine.start()
+        isCapturingMicrophone = true
+    }
+
+    private func endMicrophoneCapture() {
+        guard isCapturingMicrophone else { return }
+        captureAudioEngine.inputNode.removeTap(onBus: 0)
+        captureAudioEngine.stop()
+        pcmFormatConverter = nil
+        isCapturingMicrophone = false
+    }
+
+    // Converts one hardware-format buffer to 16kHz mono float32 and ships it as a base64 stdin
+    // line. Runs on the audio tap's realtime-adjacent thread — keep it allocation-light and never
+    // block on locks the main actor holds.
+    private func convertAndStreamToDaemon(_ capturedBuffer: AVAudioPCMBuffer) {
+        guard let pcmFormatConverter else { return }
+
+        let resampleRatio = Self.daemonPCMFormat.sampleRate / capturedBuffer.format.sampleRate
+        let outputFrameCapacity = AVAudioFrameCount(Double(capturedBuffer.frameLength) * resampleRatio) + 16
+        guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: Self.daemonPCMFormat, frameCapacity: outputFrameCapacity) else {
+            return
+        }
+
+        var didProvideInput = false
+        var conversionError: NSError?
+        pcmFormatConverter.convert(to: convertedBuffer, error: &conversionError) { _, inputStatusPointer in
+            if didProvideInput {
+                inputStatusPointer.pointee = .noDataNow
+                return nil
+            }
+            didProvideInput = true
+            inputStatusPointer.pointee = .haveData
+            return capturedBuffer
+        }
+
+        guard conversionError == nil,
+              convertedBuffer.frameLength > 0,
+              let convertedChannelData = convertedBuffer.floatChannelData else {
+            return
+        }
+
+        let pcmByteCount = Int(convertedBuffer.frameLength) * MemoryLayout<Float32>.size
+        let pcmData = Data(bytes: convertedChannelData[0], count: pcmByteCount)
+        sendRawLine("{\"audio\": \"\(pcmData.base64EncodedString())\"}")
+    }
+
     private func sendCommand(_ commandName: String) {
-        guard let commandData = "{\"cmd\": \"\(commandName)\"}\n".data(using: .utf8) else { return }
         // Timestamped so the log shows send→"listening" latency (the App Nap lag was found by
         // exactly this gap; keep it observable).
         WispLog.log("voice", "→ daemon: \(commandName)")
-        sidecarStandardInput?.fileHandleForWriting.write(commandData)
+        sendRawLine("{\"cmd\": \"\(commandName)\"}")
+    }
+
+    // Writes one newline-terminated line to the daemon's stdin. Audio lines flow through here at
+    // ~10Hz — deliberately NOT logged (they would flood the log).
+    private func sendRawLine(_ jsonLine: String) {
+        guard let lineData = (jsonLine + "\n").data(using: .utf8) else { return }
+        sidecarStandardInput?.fileHandleForWriting.write(lineData)
     }
 
     // MARK: stdout protocol

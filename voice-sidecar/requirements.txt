@@ -2,6 +2,7 @@
 # Install with:  python3 -m pip install -r requirements.txt
 # Requires Apple Silicon (parakeet-mlx runs on the MLX framework).
 
+# No sounddevice: the daemon never touches the microphone — the Swift app captures audio
+# (it holds the TCC grant) and streams PCM in over stdin.
 parakeet-mlx
-sounddevice
 numpy
