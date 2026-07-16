@@ -1,18 +1,26 @@
 import Foundation
 import CoreGraphics
 
-// The kinds of teaching ink the AI can paint on the user's screen. These map to the `[DRAW:...]`
-// and `[POINT:...]` tags Claude embeds inline in its responses. A single saturated red is used for
-// all of them (per the tutor design language), and chip labels accumulate into a persistent legend.
+// The kinds of teaching ink the AI can paint on the user's screen. These map to the shipped app's
+// pointing vocabulary — `[TARGET:x,y,r]`, `[HOVER:x,y,r]`, `[HIGHLIGHT:x,y,w,h]`, `[SHAPE:arrow]`,
+// `[SHAPE:curve]`, plus legacy `[POINT]`/`[DRAW]` tags Claude embeds inline in its responses. A
+// single saturated red is used for all of them (per the tutor design language), and chip labels
+// accumulate into a persistent legend.
 enum TeachingAnnotationShape: Equatable {
-    // A stroked rectangle outline highlighting a region (no fill).
+    // A stroked rectangle outline highlighting a region (no fill). Used by [HIGHLIGHT] and [DRAW:rect].
     case rect(CGRect)
-    // A stroked arrow from a start point to an end point.
+    // A stroked arrow from a start point to an end point. Used by [SHAPE:arrow] and [DRAW:arrow].
     case arrow(from: CGPoint, to: CGPoint)
-    // A small pixel-precise filled dot marking an exact point.
+    // A quadratic bezier curve with an arrowhead at its end. Used by [SHAPE:curve].
+    case curve(from: CGPoint, control: CGPoint, to: CGPoint)
+    // A small pixel-precise filled dot marking an exact point. Used by [DRAW:dot].
     case dot(CGPoint)
-    // A white-on-red rounded chip label anchored at a point (the accumulating legend).
+    // A white-on-red rounded chip label anchored at a point (the accumulating legend). Used by [POINT].
     case chip(CGPoint)
+    // A solid ring + center dot marking the single observable next action to take. Used by [TARGET].
+    case target(center: CGPoint, radius: CGFloat)
+    // A dashed ring indicating an element to hover (a lighter-weight pointer than target). Used by [HOVER].
+    case hover(center: CGPoint, radius: CGFloat)
 }
 
 // One piece of teaching ink to render in the overlay. `label` is the optional text shown by a chip

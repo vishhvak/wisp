@@ -52,20 +52,35 @@ private struct TeachingAnnotationView: View {
             }
     }
 
-    // Chooses the right rendering for the annotation's shape.
+    // Chooses the right rendering for the annotation's shape. Shapes that carry a label (highlight
+    // rect, target ring, hover ring) also paint an accumulating white-on-red chip next to the ink.
     @ViewBuilder
     private var annotationShapeView: some View {
         switch annotation.shape {
         case .rect(let targetRectangle):
-            // A stroked outline that trims on from zero, positioned at its absolute frame.
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .trim(from: 0, to: drawOnProgress)
-                .stroke(teachingInkColor, style: StrokeStyle(lineWidth: strokeLineWidth, lineCap: .round))
-                .frame(width: targetRectangle.width, height: targetRectangle.height)
-                .position(x: targetRectangle.midX, y: targetRectangle.midY)
+            // A stroked outline that trims on from zero, positioned at its absolute frame. Used by
+            // both [HIGHLIGHT] and legacy [DRAW:rect]; a chip rides at the rect's top-left when labelled.
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .trim(from: 0, to: drawOnProgress)
+                    .stroke(teachingInkColor, style: StrokeStyle(lineWidth: strokeLineWidth, lineCap: .round))
+                    .frame(width: targetRectangle.width, height: targetRectangle.height)
+                    .position(x: targetRectangle.midX, y: targetRectangle.midY)
+
+                if !annotation.label.isEmpty {
+                    labelChip
+                        .position(x: targetRectangle.minX, y: targetRectangle.minY - 14)
+                }
+            }
 
         case .arrow(let startPoint, let endPoint):
             ArrowShape(startPoint: startPoint, endPoint: endPoint)
+                .trim(from: 0, to: drawOnProgress)
+                .stroke(teachingInkColor, style: StrokeStyle(lineWidth: strokeLineWidth, lineCap: .round, lineJoin: .round))
+
+        case .curve(let startPoint, let controlPoint, let endPoint):
+            // A quadratic bezier with an arrowhead at its end, trimmed on like the straight arrow.
+            CurvedArrowShape(startPoint: startPoint, controlPoint: controlPoint, endPoint: endPoint)
                 .trim(from: 0, to: drawOnProgress)
                 .stroke(teachingInkColor, style: StrokeStyle(lineWidth: strokeLineWidth, lineCap: .round, lineJoin: .round))
 
@@ -78,19 +93,101 @@ private struct TeachingAnnotationView: View {
 
         case .chip(let anchorPoint):
             // A white-on-red rounded chip label that fades/scales in and stays as part of the legend.
-            Text(annotation.label)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(.horizontal, DS.Spacing.small)
-                .padding(.vertical, DS.Spacing.extraSmall)
-                .background(
-                    RoundedRectangle(cornerRadius: DS.CornerRadius.chip, style: .continuous)
-                        .fill(teachingInkColor)
-                )
+            labelChip
                 .position(anchorPoint)
-                .opacity(Double(drawOnProgress))
-                .scaleEffect(0.9 + (0.1 * drawOnProgress))
+
+        case .target(let center, let radius):
+            // A solid ring + center dot marking the single observable next action, with a chip label.
+            ZStack {
+                Circle()
+                    .trim(from: 0, to: drawOnProgress)
+                    .stroke(teachingInkColor, style: StrokeStyle(lineWidth: strokeLineWidth, lineCap: .round))
+                    .frame(width: radius * 2, height: radius * 2)
+                    .position(center)
+
+                Circle()
+                    .fill(teachingInkColor)
+                    .frame(width: 8, height: 8)
+                    .position(center)
+                    .opacity(Double(drawOnProgress))
+
+                if !annotation.label.isEmpty {
+                    labelChip
+                        .position(x: center.x, y: center.y - radius - 14)
+                }
+            }
+
+        case .hover(let center, let radius):
+            // A dashed ring indicating an element to hover — lighter-weight than a target — with a chip.
+            ZStack {
+                Circle()
+                    .trim(from: 0, to: drawOnProgress)
+                    .stroke(
+                        teachingInkColor,
+                        style: StrokeStyle(lineWidth: strokeLineWidth, lineCap: .round, dash: [6, 5])
+                    )
+                    .frame(width: radius * 2, height: radius * 2)
+                    .position(center)
+
+                if !annotation.label.isEmpty {
+                    labelChip
+                        .position(x: center.x, y: center.y - radius - 14)
+                }
+            }
         }
+    }
+
+    // The shared white-on-red chip used by chip/target/hover/highlight annotations. Fades and
+    // scales in with the draw-on progress and then stays put as part of the persistent legend.
+    private var labelChip: some View {
+        Text(annotation.label)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.white)
+            .padding(.horizontal, DS.Spacing.small)
+            .padding(.vertical, DS.Spacing.extraSmall)
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.chip, style: .continuous)
+                    .fill(teachingInkColor)
+            )
+            .opacity(Double(drawOnProgress))
+            .scaleEffect(0.9 + (0.1 * drawOnProgress))
+            .fixedSize()
+    }
+}
+
+// A curved (quadratic bezier) arrow from start to end, bending through a control point, with a
+// two-line arrowhead at the end. Like ArrowShape, it's a Shape so the draw-on trim animation works.
+private struct CurvedArrowShape: Shape {
+    let startPoint: CGPoint
+    let controlPoint: CGPoint
+    let endPoint: CGPoint
+
+    func path(in rect: CGRect) -> Path {
+        var curvedPath = Path()
+        curvedPath.move(to: startPoint)
+        curvedPath.addQuadCurve(to: endPoint, control: controlPoint)
+
+        // Orient the arrowhead along the curve's final tangent, which for a quadratic bezier points
+        // from the control point toward the end point.
+        let finalTangentAngle = atan2(endPoint.y - controlPoint.y, endPoint.x - controlPoint.x)
+        let arrowheadLength: CGFloat = 12
+        let arrowheadSpreadAngle: CGFloat = .pi / 7
+
+        let leftHeadPoint = CGPoint(
+            x: endPoint.x - arrowheadLength * cos(finalTangentAngle - arrowheadSpreadAngle),
+            y: endPoint.y - arrowheadLength * sin(finalTangentAngle - arrowheadSpreadAngle)
+        )
+        let rightHeadPoint = CGPoint(
+            x: endPoint.x - arrowheadLength * cos(finalTangentAngle + arrowheadSpreadAngle),
+            y: endPoint.y - arrowheadLength * sin(finalTangentAngle + arrowheadSpreadAngle)
+        )
+
+        curvedPath.move(to: endPoint)
+        curvedPath.addLine(to: leftHeadPoint)
+        curvedPath.move(to: endPoint)
+        curvedPath.addLine(to: rightHeadPoint)
+
+        return curvedPath
     }
 }
 

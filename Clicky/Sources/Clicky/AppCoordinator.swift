@@ -38,6 +38,21 @@ final class AppCoordinator: ObservableObject {
     // The most recent (partial or final) transcript, useful for debugging / a future caption UI.
     @Published private(set) var latestTranscript: String = ""
 
+    // The last spoken response line, shown in the notch HUD while responding.
+    @Published private(set) var latestResponseLine: String = ""
+
+    // The text currently shown in the EXPANDED notch HUD, or nil when the HUD should be COLLAPSED.
+    // While listening this holds the live partial transcript; while responding it holds the last
+    // response line (which then auto-dismisses). nil → the notch shows only its slim collapsed pill.
+    @Published private(set) var notchExpandedText: String?
+
+    // How long the notch keeps a response line expanded before collapsing back to the pill. Mirrors
+    // the shipped app's `_notchTextResponseAutoDismissDurationSeconds`.
+    static let notchTextResponseAutoDismissDurationSeconds: Double = 4.0
+
+    // Cancellable auto-dismiss for the expanded notch response text.
+    private var notchAutoDismissTask: Task<Void, Never>?
+
     // MARK: - Owned collaborators
 
     // The voice engine (hotkeys + transcription + TTS). Created lazily so we can pass `self`.
@@ -45,6 +60,10 @@ final class AppCoordinator: ObservableObject {
 
     // The overlay window controller. Also created lazily so it can hold a reference back to `self`.
     private(set) lazy var overlayController = OverlayController(appCoordinator: self)
+
+    // The notch-anchored HUD controller (top-center pill under the camera notch, or top-center on
+    // displays without one). Created lazily so it can hold a reference back to `self`.
+    private(set) lazy var notchHUDController = NotchHUDController(appCoordinator: self)
 
     // The store of agent tasks. Kept as a small dedicated type so task mutations live in one place.
     let taskCardStore = TaskCardStore()
@@ -121,6 +140,7 @@ final class AppCoordinator: ObservableObject {
             .assign(to: \.agentTasks, on: self)
 
         overlayController.show()
+        notchHUDController.show()
         voiceEngine.start()
     }
 
@@ -134,6 +154,10 @@ final class AppCoordinator: ObservableObject {
 
     func handlePartialTranscript(_ partialText: String) {
         latestTranscript = partialText
+        // While listening, keep the notch HUD expanded showing the live partial transcript. Cancel
+        // any pending response auto-dismiss so a new utterance immediately takes over the notch.
+        notchAutoDismissTask?.cancel()
+        notchExpandedText = partialText
     }
 
     // A finalized utterance — hand it to Claude and stream the response back (voice + teaching ink).
@@ -174,12 +198,39 @@ final class AppCoordinator: ObservableObject {
             // On any streaming failure, fall back to whatever text we accumulated (possibly empty).
         }
 
-        // Speak the response. The responding state drives the cursor triangle glyph during TTS.
+        // Speak the response. The responding state drives the cursor triangle glyph during TTS, and
+        // the notch HUD expands to show the first line of the response (auto-dismissing after ~4s).
         transition(to: .responding)
+        let firstResponseLine = firstLine(of: accumulatedSpokenText)
+        latestResponseLine = firstResponseLine
+        showNotchResponseLine(firstResponseLine)
         await voiceEngine.speak(accumulatedSpokenText)
 
         // Return to the always-on idle state once speech finishes.
         transition(to: .idle)
+    }
+
+    // Shows a response line in the expanded notch HUD, then auto-collapses it after the shipped
+    // auto-dismiss duration so the notch returns to its slim "Always on" pill.
+    private func showNotchResponseLine(_ responseLine: String) {
+        guard !responseLine.isEmpty else { return }
+        notchExpandedText = responseLine
+        notchAutoDismissTask?.cancel()
+        notchAutoDismissTask = Task { [weak self] in
+            let autoDismissNanoseconds = UInt64(Self.notchTextResponseAutoDismissDurationSeconds * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: autoDismissNanoseconds)
+            guard !Task.isCancelled else { return }
+            self?.notchExpandedText = nil
+        }
+    }
+
+    // Returns the first non-empty line of a block of text (the notch shows a single line).
+    private func firstLine(of text: String) -> String {
+        text
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespaces) ?? text.trimmingCharacters(in: .whitespaces)
     }
 
     // MARK: - Teaching ink

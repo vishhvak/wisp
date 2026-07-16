@@ -201,10 +201,15 @@ final class InlineTagExtractor {
     }
 
     // Parses a single tag string into a TeachingAnnotation. Supported forms:
-    //   [POINT:x,y:label:screenN]                         → a dot + chip at (x,y)
-    //   [DRAW:rect:x,y,width,height:label:screenN]        → a stroked rectangle
-    //   [DRAW:arrow:x1,y1,x2,y2:label:screenN]            → an arrow from (x1,y1) to (x2,y2)
-    //   [DRAW:dot:x,y:label:screenN]                      → a dot
+    //   [TARGET:x,y,r:label]                              → ring + center dot + chip (next action)
+    //   [HOVER:x,y,r:label]                               → dashed ring + chip (element to hover)
+    //   [HIGHLIGHT:x,y,width,height:label]                → stroked rect + chip (region to note)
+    //   [SHAPE:arrow:x1,y1,x2,y2:label]                   → an arrow from (x1,y1) to (x2,y2)
+    //   [SHAPE:curve:x1,y1,cx,cy,x2,y2:label]             → a curved arrow bending through (cx,cy)
+    //   [POINT:x,y:label:screenN]                         → a labelled chip marker at (x,y) (legacy)
+    //   [DRAW:rect:x,y,width,height:label:screenN]        → a stroked rectangle (legacy)
+    //   [DRAW:arrow:x1,y1,x2,y2:label:screenN]            → an arrow from (x1,y1) to (x2,y2) (legacy)
+    //   [DRAW:dot:x,y:label:screenN]                      → a dot (legacy)
     // The `label` and `screenN` fields are optional; a missing screen defaults to display 0.
     private static func parseTag(_ tagText: String) -> TeachingAnnotation? {
         // Strip the surrounding brackets and split into colon-delimited fields.
@@ -214,6 +219,49 @@ final class InlineTagExtractor {
         guard let tagKind = fields.first?.uppercased() else { return nil }
 
         switch tagKind {
+        case "TARGET":
+            // [TARGET:x,y,r:label] — the single observable next action to take.
+            guard fields.count >= 2,
+                  let (center, radius) = parsePointAndRadius(fields[1]) else { return nil }
+            let label = fields.count >= 3 ? fields[2] : ""
+            let displayIndex = fields.count >= 4 ? parseScreenIndex(fields[3]) : 0
+            return TeachingAnnotation(shape: .target(center: center, radius: radius), label: label, displayIndex: displayIndex)
+
+        case "HOVER":
+            // [HOVER:x,y,r:label] — an element the user should hover over.
+            guard fields.count >= 2,
+                  let (center, radius) = parsePointAndRadius(fields[1]) else { return nil }
+            let label = fields.count >= 3 ? fields[2] : ""
+            let displayIndex = fields.count >= 4 ? parseScreenIndex(fields[3]) : 0
+            return TeachingAnnotation(shape: .hover(center: center, radius: radius), label: label, displayIndex: displayIndex)
+
+        case "HIGHLIGHT":
+            // [HIGHLIGHT:x,y,width,height:label] — a region to call attention to.
+            guard fields.count >= 2,
+                  let rectangle = parseCGRect(fields[1]) else { return nil }
+            let label = fields.count >= 3 ? fields[2] : ""
+            let displayIndex = fields.count >= 4 ? parseScreenIndex(fields[3]) : 0
+            return TeachingAnnotation(shape: .rect(rectangle), label: label, displayIndex: displayIndex)
+
+        case "SHAPE":
+            // [SHAPE:arrow:coords:label] or [SHAPE:curve:coords:label]
+            guard fields.count >= 3 else { return nil }
+            let shapeKind = fields[1].lowercased()
+            let coordinateField = fields[2]
+            let label = fields.count >= 4 ? fields[3] : ""
+            let displayIndex = fields.count >= 5 ? parseScreenIndex(fields[4]) : 0
+
+            switch shapeKind {
+            case "arrow":
+                guard let (startPoint, endPoint) = parseTwoPoints(coordinateField) else { return nil }
+                return TeachingAnnotation(shape: .arrow(from: startPoint, to: endPoint), label: label, displayIndex: displayIndex)
+            case "curve":
+                guard let (startPoint, controlPoint, endPoint) = parseThreePoints(coordinateField) else { return nil }
+                return TeachingAnnotation(shape: .curve(from: startPoint, control: controlPoint, to: endPoint), label: label, displayIndex: displayIndex)
+            default:
+                return nil
+            }
+
         case "POINT":
             // [POINT:x,y:label:screenN]
             guard fields.count >= 2,
@@ -255,6 +303,24 @@ final class InlineTagExtractor {
         let numbers = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard numbers.count == 2 else { return nil }
         return CGPoint(x: numbers[0], y: numbers[1])
+    }
+
+    // Parses "x,y,r" into a center point plus a radius (used by TARGET and HOVER).
+    private static func parsePointAndRadius(_ text: String) -> (CGPoint, CGFloat)? {
+        let numbers = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard numbers.count == 3 else { return nil }
+        return (CGPoint(x: numbers[0], y: numbers[1]), CGFloat(numbers[2]))
+    }
+
+    // Parses "x1,y1,cx,cy,x2,y2" into a start / control / end point triple (used by SHAPE:curve).
+    private static func parseThreePoints(_ text: String) -> (CGPoint, CGPoint, CGPoint)? {
+        let numbers = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard numbers.count == 6 else { return nil }
+        return (
+            CGPoint(x: numbers[0], y: numbers[1]),
+            CGPoint(x: numbers[2], y: numbers[3]),
+            CGPoint(x: numbers[4], y: numbers[5])
+        )
     }
 
     // Parses "x,y,width,height" into a CGRect.

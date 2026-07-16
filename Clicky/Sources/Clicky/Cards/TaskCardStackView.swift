@@ -14,6 +14,8 @@ struct TaskCardStackView: View {
     var onVoiceFollowUpTapped: (AgentTask) -> Void = { _ in }
 
     var body: some View {
+        // A tight, content-sized stack (trailing-aligned) — the panel that hosts it does the actual
+        // top-right screen anchoring now, so this view no longer stretches to fill the screen.
         VStack(alignment: .trailing, spacing: DS.Spacing.medium) {
             // newest-on-top: reverse creation order so the most recent task card sits at the top.
             ForEach(agentTasks.reversed()) { agentTask in
@@ -33,10 +35,6 @@ struct TaskCardStackView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        // Anchor the whole stack to the top-right of the available space, with a margin from edges.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .padding(.top, DS.Spacing.extraLarge)
-        .padding(.trailing, DS.Spacing.extraLarge)
         .animation(.easeInOut(duration: 0.25), value: agentTasks)
     }
 }
