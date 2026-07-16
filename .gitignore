@@ -30,3 +30,6 @@ venv/
 
 # macOS
 .DS_Store
+
+# Agent harness state — not part of the project
+.claude/
