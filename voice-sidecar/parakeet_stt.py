@@ -146,6 +146,13 @@ def main():
         )
         stream.start()
         active_input_stream = stream
+        # Diagnostics to stderr (mirrored into the app log): WHICH device is being captured.
+        # A silent capture with a healthy-looking stream is the TCC-zeros signature.
+        try:
+            default_input_device = sd.query_devices(kind="input")
+            print(f"[audio] capturing from: {default_input_device['name']}", file=sys.stderr, flush=True)
+        except Exception as device_query_error:
+            print(f"[audio] device query failed: {device_query_error}", file=sys.stderr, flush=True)
         emit({"status": "listening"})
 
     def handle_stop_command():
@@ -167,9 +174,21 @@ def main():
         with state_lock:
             current_utterance_samples.extend(drained_blocks)
             if current_utterance_samples:
-                final_text = transcribe_locked(np.concatenate(current_utterance_samples))
+                combined_samples = np.concatenate(current_utterance_samples)
+                # Amplitude diagnostics: distinguishes "mic delivered zeros" (peak ≈ 0 → TCC/
+                # device problem) from "model heard audio but produced nothing" (peak normal).
+                print(
+                    f"[audio] session captured {combined_samples.size} samples "
+                    f"({combined_samples.size / sample_rate_hz:.1f}s) "
+                    f"peak={float(np.max(np.abs(combined_samples))):.4f} "
+                    f"rms={float(np.sqrt(np.mean(np.square(combined_samples)))):.5f}",
+                    file=sys.stderr, flush=True,
+                )
+                final_text = transcribe_locked(combined_samples)
                 if final_text:
                     emit({"final": final_text})
+            else:
+                print("[audio] session captured ZERO blocks", file=sys.stderr, flush=True)
             current_utterance_samples.clear()
             consecutive_silent_blocks = 0
             last_emitted_partial_text = ""
