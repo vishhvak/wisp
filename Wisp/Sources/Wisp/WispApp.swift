@@ -57,6 +57,21 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             reason: "Wisp voice pipeline must stay wake-ready for push-to-talk"
         )
 
+        // Request microphone access AS WISP at launch. Since the binary embeds a bundle identity
+        // (com.wisp.app), TCC attributes the Parakeet daemon's capture to Wisp — and an ungranted
+        // identity gets pure digital silence, not an error (observed live: 3.5s of samples, every
+        // one exactly 0.0000). Unlike Speech Recognition, a mic request does NOT abort unbundled
+        // binaries, and the embedded NSMicrophoneUsageDescription satisfies the prompt requirement.
+        let microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        WispLog.log("voice", "Microphone authorization at launch: \(microphoneStatus.rawValue) (0=notDetermined 2=denied 3=authorized)")
+        if microphoneStatus == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { wasGranted in
+                WispLog.log("voice", "Microphone access request → \(wasGranted ? "GRANTED" : "DENIED")")
+            }
+        } else if microphoneStatus != .authorized {
+            WispLog.log("voice", "Microphone denied for the Wisp identity — reset with: tccutil reset Microphone com.wisp.app, then relaunch")
+        }
+
         // NOTE deliberately NOT requesting Speech Recognition here. For a bare terminal-launched
         // binary, TCC ABORTS the process on that request (__TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION__)
         // instead of failing politely — it demands a real .app bundle for this permission class.
