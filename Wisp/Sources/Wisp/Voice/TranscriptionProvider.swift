@@ -146,6 +146,13 @@ final class AppleSpeechProvider: TranscriptionProvider {
             // recognition task errors out instantly and the session looks silently dead.
             let currentAuthorizationStatus = SFSpeechRecognizer.authorizationStatus()
             if currentAuthorizationStatus == .notDetermined {
+                // TCC ABORTS an unbundled (bare `swift run`) binary that requests speech auth —
+                // __TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION__ — so only request from a real .app.
+                guard Bundle.main.bundlePath.hasSuffix(".app") else {
+                    WispLog.log("voice", "Apple Speech unavailable unbundled (TCC would abort on the auth request) — run as Wisp.app via scripts/make-app.sh, or rely on Parakeet")
+                    continuation.finish()
+                    return
+                }
                 WispLog.log("voice", "requesting Speech Recognition authorization…")
                 SFSpeechRecognizer.requestAuthorization { grantedStatus in
                     WispLog.log("voice", "Speech Recognition authorization: \(grantedStatus.rawValue) (1=denied 2=restricted 3=authorized)")

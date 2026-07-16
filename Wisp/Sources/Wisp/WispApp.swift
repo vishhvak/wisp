@@ -36,18 +36,26 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     // SwiftUI scene share exactly one.
     let appCoordinator = AppCoordinator()
 
+    // True when Wisp is running from a real .app bundle (vs a bare `swift run` binary). Several
+    // TCC-gated APIs (Speech Recognition especially) hard-abort the process when requested from an
+    // unbundled binary, so permission REQUESTS are gated on this.
+    static var isRunningFromAppBundle: Bool {
+        Bundle.main.bundlePath.hasSuffix(".app")
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // .accessory = menu-bar/background app with NO dock icon and no default main menu window.
         NSApp.setActivationPolicy(.accessory)
 
-        // Register with Speech Recognition up front (rather than deep inside a fallback session) so
-        // the system prompt fires and Wisp appears in the Settings pane's app list immediately.
-        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
-            WispLog.log("voice", "requesting Speech Recognition authorization at launch…")
-            SFSpeechRecognizer.requestAuthorization { grantedStatus in
-                WispLog.log("voice", "Speech Recognition authorization at launch: \(grantedStatus.rawValue) (3=authorized)")
-            }
-        }
+        // NOTE deliberately NOT requesting Speech Recognition here. For a bare terminal-launched
+        // binary, TCC ABORTS the process on that request (__TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION__)
+        // instead of failing politely — it demands a real .app bundle for this permission class.
+        // Speech auth is only requested when running bundled (scripts/make-app.sh); Parakeet (the
+        // primary, local STT) needs no speech permission at all.
+        WispLog.log(
+            "voice",
+            "Speech Recognition status at launch: \(SFSpeechRecognizer.authorizationStatus().rawValue) (3=authorized); bundled: \(Self.isRunningFromAppBundle)"
+        )
 
         // Bring up the overlay and start listening for hotkeys.
         appCoordinator.start()
@@ -174,8 +182,14 @@ struct CompanionMenuContent: View {
             guard !isGranted else { return }
             if settingsPane == "Privacy_SpeechRecognition",
                SFSpeechRecognizer.authorizationStatus() == .notDetermined {
-                SFSpeechRecognizer.requestAuthorization { grantedStatus in
-                    WispLog.log("voice", "Speech Recognition authorization via menu: \(grantedStatus.rawValue) (3=authorized)")
+                // Requesting speech auth from an UNBUNDLED binary makes TCC abort the whole app —
+                // only fire the request when running as Wisp.app (scripts/make-app.sh).
+                if CompanionAppDelegate.isRunningFromAppBundle {
+                    SFSpeechRecognizer.requestAuthorization { grantedStatus in
+                        WispLog.log("voice", "Speech Recognition authorization via menu: \(grantedStatus.rawValue) (3=authorized)")
+                    }
+                } else {
+                    WispLog.log("voice", "speech auth request skipped — run as Wisp.app (scripts/make-app.sh) to enable the Apple Speech fallback; Parakeet needs no speech permission")
                 }
                 return
             }

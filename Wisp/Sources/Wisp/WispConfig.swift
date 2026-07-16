@@ -25,9 +25,19 @@ enum WispConfig {
         if let sidecarPathOverride = ProcessInfo.processInfo.environment["WISP_SIDECAR_PATH"] {
             return sidecarPathOverride
         }
-        // Default: the sidecar shipped alongside this package at ../voice-sidecar/parakeet_stt.py,
-        // resolved relative to the current working directory the app was launched from.
-        return "../voice-sidecar/parakeet_stt.py"
+
+        // Candidates, most specific first. CWD-relative covers `swift run` from Wisp/ or the repo
+        // root; executable-relative covers dist/Wisp.app (whose CWD when launched via `open` is /).
+        let executableDirectory = (Bundle.main.executablePath as NSString?)?.deletingLastPathComponent ?? ""
+        let candidateSidecarPaths = [
+            "../voice-sidecar/parakeet_stt.py",
+            "voice-sidecar/parakeet_stt.py",
+            "\(executableDirectory)/../../../../voice-sidecar/parakeet_stt.py",  // dist/Wisp.app → repo root
+        ]
+        for candidatePath in candidateSidecarPaths where FileManager.default.fileExists(atPath: candidatePath) {
+            return candidatePath
+        }
+        return candidateSidecarPaths[0]
     }
 
     // The Python interpreter used to run the sidecar. Prefers the sidecar's own virtualenv
