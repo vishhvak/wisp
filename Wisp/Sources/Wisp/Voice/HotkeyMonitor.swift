@@ -45,10 +45,15 @@ final class HotkeyMonitor {
     private let multiTapWindowSeconds: TimeInterval = 0.4
 
     func start() {
+        let isAccessibilityTrusted = AXIsProcessTrusted()
+        WispLog.log("hotkeys", "starting (Accessibility trusted: \(isAccessibilityTrusted))")
+
         // Attempt the preferred low-level tap first; fall back if it can't be installed.
         if installCGEventTap() {
+            WispLog.log("hotkeys", "CGEvent tap installed (preferred path)")
             return
         }
+        WispLog.log("hotkeys", "CGEvent tap unavailable (usually missing Accessibility permission) — using NSEvent global-monitor fallback; modifier holds may be less reliable")
         installFallbackGlobalMonitor()
     }
 

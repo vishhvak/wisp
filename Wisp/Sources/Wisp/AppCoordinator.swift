@@ -36,8 +36,13 @@ final class AppCoordinator: ObservableObject {
     // The currently-visible completion toast message, if any.
     @Published private(set) var activeToastMessage: String?
 
-    // The tracked cursor position, in the overlay's top-left-origin space, that the glyph rides.
+    // The tracked cursor position, in the MAIN screen overlay's top-left-origin space (used by the
+    // teaching layers whose coordinates live in that space).
     @Published var cursorGlyphPositionInOverlay: CGPoint = .zero
+
+    // The tracked cursor position in GLOBAL bottom-left-origin screen coordinates. Each per-screen
+    // overlay converts this into its own space, so the glyph follows the cursor across monitors.
+    @Published var cursorGlobalBottomLeftPoint: CGPoint = .zero
 
     // The most recent (partial or final) transcript, useful for debugging / a future caption UI.
     @Published private(set) var latestTranscript: String = ""
@@ -164,6 +169,8 @@ final class AppCoordinator: ObservableObject {
     // MARK: - State transitions
 
     func transition(to newState: CompanionState) {
+        guard companionState != newState else { return }
+        WispLog.log("state", "\(companionState) → \(newState)")
         companionState = newState
     }
 
@@ -406,6 +413,11 @@ final class VoiceEngine {
     private var activeTranscriptionProvider: TranscriptionProvider?
     private var activeListeningTask: Task<Void, Never>?
 
+    // True once the current listening session has produced a FINAL transcript (which hands off to
+    // the respond pipeline). Used on release: if no final ever arrived, we must return to idle
+    // ourselves or the UI sticks on "Listening" forever.
+    private var didReceiveFinalTranscriptThisSession = false
+
     init(appCoordinator: AppCoordinator) {
         self.appCoordinator = appCoordinator
     }
@@ -429,12 +441,27 @@ final class VoiceEngine {
     }
 
     private func handleHotkeyEvent(_ hotkeyEvent: HotkeyEvent) {
+        WispLog.log("hotkeys", "gesture: \(hotkeyEvent)")
         switch hotkeyEvent {
         case .pushToTalkPressed, .dictationPressed:
             appCoordinator.transition(to: .listening)
             beginListeningSession()
         case .pushToTalkReleased, .dictationReleased:
             endListeningSession()
+            // If the session never produced a final transcript (no speech, no permissions, no
+            // provider), nothing else will move the state machine — return to idle here or the UI
+            // sticks on "Listening" forever. A short grace period lets an in-flight final land.
+            if !didReceiveFinalTranscriptThisSession {
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    guard let self else { return }
+                    if !self.didReceiveFinalTranscriptThisSession,
+                       self.appCoordinator.companionState == .listening {
+                        WispLog.log("voice", "release with no final transcript — returning to idle")
+                        self.appCoordinator.transition(to: .idle)
+                    }
+                }
+            }
         case .controlDoubleTapped:
             // Text mode — a future text-entry surface; for now just return to idle.
             appCoordinator.transition(to: .idle)
@@ -449,21 +476,28 @@ final class VoiceEngine {
     func beginListeningSession() {
         // Don't start a second overlapping session.
         guard activeListeningTask == nil else { return }
+        didReceiveFinalTranscriptThisSession = false
 
         let resolvedProvider = resolveTranscriptionProvider()
         activeTranscriptionProvider = resolvedProvider
+        WispLog.log("voice", "listening session started (provider: \(type(of: resolvedProvider)))")
 
         activeListeningTask = Task { [weak self] in
             guard let self else { return }
+            var receivedAnyUpdate = false
             for await transcriptUpdate in resolvedProvider.startTranscribing() {
+                receivedAnyUpdate = true
                 switch transcriptUpdate {
                 case .partial(let partialText):
                     self.appCoordinator.handlePartialTranscript(partialText)
                 case .final(let finalText):
+                    WispLog.log("voice", "final transcript: \"\(finalText.prefix(120))\"")
+                    self.didReceiveFinalTranscriptThisSession = true
                     self.appCoordinator.handleFinalTranscript(finalText)
                 }
             }
             // The provider's stream finished (utterance ended or provider stopped).
+            WispLog.log("voice", "listening session ended (receivedAnyUpdate: \(receivedAnyUpdate))")
             self.activeListeningTask = nil
         }
     }
@@ -475,13 +509,14 @@ final class VoiceEngine {
         activeListeningTask = nil
     }
 
-    // Chooses a transcription provider: prefer the local Parakeet sidecar, fall back to Apple Speech
-    // if the sidecar can't launch (missing python / package / model).
+    // Chooses a transcription provider: the local Parakeet sidecar when its script + python3 are
+    // actually present, otherwise Apple Speech. (An earlier version consulted a flag the sidecar
+    // only sets AFTER a failed launch, so the fallback never engaged — check upfront instead.)
     private func resolveTranscriptionProvider() -> TranscriptionProvider {
-        let parakeetProvider = ParakeetSidecarProvider()
-        if parakeetProvider.didFailToLaunch {
-            return AppleSpeechProvider()
+        if ParakeetSidecarProvider.isSidecarRunnable() {
+            return ParakeetSidecarProvider()
         }
-        return parakeetProvider
+        WispLog.log("voice", "Parakeet sidecar not runnable (script/python3 missing) — using Apple Speech")
+        return AppleSpeechProvider()
     }
 }

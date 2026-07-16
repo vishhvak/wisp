@@ -28,6 +28,7 @@ final class NotchHUDController {
     // drag NEARS it, before the drop) and mouse-ups that end an abandoned drag.
     private var dragProximityMonitors: [Any] = []
     private var interactivityObservation: AnyCancellable?
+    private var screenParametersObserver: Any?
 
     // The fixed canvas the island animates within. Wide enough for the expanded island, tall enough
     // for the below-notch text area; everything outside the island stays fully transparent.
@@ -38,12 +39,21 @@ final class NotchHUDController {
     }
 
     func show() {
-        if notchPanel == nil {
-            notchPanel = buildNotchPanel()
-            startDragProximityMonitoring()
-            startInteractivityObservation()
+        rebuildForCurrentScreens()
+
+        // Displays come and go (external monitor plugged in, lid closed) — re-evaluate whether a
+        // notched display exists, and where, whenever the screen layout changes.
+        if screenParametersObserver == nil {
+            screenParametersObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.rebuildForCurrentScreens()
+                }
+            }
         }
-        notchPanel?.orderFrontRegardless()
     }
 
     func hide() {
@@ -52,10 +62,36 @@ final class NotchHUDController {
         interactivityObservation = nil
     }
 
+    // Shows the island on the notched display when one is present; tears it down entirely when none
+    // is (clamshell mode / external-only setups). The island's whole illusion depends on blending
+    // into a physical cutout — on a notchless screen it's just a floating blob, so we don't show one.
+    private func rebuildForCurrentScreens() {
+        guard let notchedScreen = notchedScreen() else {
+            if notchPanel != nil {
+                WispLog.log("notch", "no notched display in current layout — hiding the island")
+            }
+            notchPanel?.orderOut(nil)
+            notchPanel = nil
+            stopDragProximityMonitoring()
+            interactivityObservation = nil
+            // Abandon any half-open drop/composer state so panels don't linger invisibly.
+            appCoordinator.cancelComposer()
+            return
+        }
+
+        if notchPanel == nil {
+            notchPanel = buildNotchPanel(on: notchedScreen)
+            startDragProximityMonitoring()
+            startInteractivityObservation()
+            let notchMetrics = Self.measureNotch(on: notchedScreen)
+            WispLog.log("notch", "island shown on notched display (notch \(Int(notchMetrics.width))×\(Int(notchMetrics.height))pt)")
+        }
+        notchPanel?.orderFrontRegardless()
+    }
+
     // MARK: - Panel construction
 
-    private func buildNotchPanel() -> NSPanel {
-        let anchorScreen = notchedOrFallbackScreen()
+    private func buildNotchPanel(on anchorScreen: NSScreen) -> NSPanel {
         let notchMetrics = Self.measureNotch(on: anchorScreen)
 
         let panel = KeyableNotchPanel(
@@ -188,7 +224,8 @@ final class NotchHUDController {
     // notch": a band centered on the notch, a bit wider than the open drop target, reaching ~90pt
     // down from the top edge so the gesture feels forgiving.
     private func notchHotZone() -> NSRect {
-        let anchorScreen = notchedOrFallbackScreen()
+        // The island only exists on a notched display; no notch → an empty zone that never matches.
+        guard let anchorScreen = notchedScreen() else { return .zero }
         let screenFrame = anchorScreen.frame
         let hotZoneWidth: CGFloat = 560
         let hotZoneHeight: CGFloat = 90
@@ -220,10 +257,8 @@ final class NotchHUDController {
         return (width: 0, height: 30)
     }
 
-    private func notchedOrFallbackScreen() -> NSScreen {
-        if let notchedScreen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
-            return notchedScreen
-        }
-        return NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
+    // The display with a physical notch, or nil when none is present (external-only / clamshell).
+    private func notchedScreen() -> NSScreen? {
+        NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 })
     }
 }

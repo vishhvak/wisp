@@ -39,6 +39,17 @@ final class ParakeetSidecarProvider: TranscriptionProvider {
         self.sidecarScriptPath = sidecarScriptPath
     }
 
+    // Whether the sidecar can plausibly run at all: its script exists and a python3 is on PATH.
+    // Checked BEFORE choosing this provider — a launch-failure flag set after the fact is useless
+    // for provider selection (that bug shipped once; hence this).
+    static func isSidecarRunnable(sidecarScriptPath: String = WispConfig.parakeetSidecarScriptPath) -> Bool {
+        guard FileManager.default.fileExists(atPath: sidecarScriptPath) else { return false }
+        let pathEnvironment = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"
+        return pathEnvironment
+            .split(separator: ":")
+            .contains { FileManager.default.isExecutableFile(atPath: "\($0)/python3") }
+    }
+
     func startTranscribing() -> AsyncStream<TranscriptUpdate> {
         AsyncStream { continuation in
             let launchedProcess = Process()
@@ -111,8 +122,11 @@ final class ParakeetSidecarProvider: TranscriptionProvider {
             continuation.yield(.partial(partialText))
         } else if let finalText = decodedObject["final"] as? String {
             continuation.yield(.final(finalText))
+        } else if let errorText = decodedObject["error"] as? String {
+            // Surface sidecar-reported problems (e.g. "parakeet-mlx not installed") in the log so a
+            // silent no-transcript session is diagnosable.
+            WispLog.log("voice", "parakeet sidecar error: \(errorText)")
         }
-        // An {"error": ...} line is ignored here; the process exit + fallback path handles recovery.
     }
 }
 
@@ -129,8 +143,26 @@ final class AppleSpeechProvider: TranscriptionProvider {
 
     func startTranscribing() -> AsyncStream<TranscriptUpdate> {
         AsyncStream { continuation in
+            // Speech recognition is permission-gated; without an explicit authorization request the
+            // recognition task errors out instantly and the session looks silently dead.
+            let currentAuthorizationStatus = SFSpeechRecognizer.authorizationStatus()
+            if currentAuthorizationStatus == .notDetermined {
+                WispLog.log("voice", "requesting Speech Recognition authorization…")
+                SFSpeechRecognizer.requestAuthorization { grantedStatus in
+                    WispLog.log("voice", "Speech Recognition authorization: \(grantedStatus.rawValue) (1=denied 2=restricted 3=authorized)")
+                }
+                // The user is mid-permission-dialog; this session can't proceed. The next hold will.
+                continuation.finish()
+                return
+            }
+            guard currentAuthorizationStatus == .authorized else {
+                WispLog.log("voice", "Speech Recognition not authorized (status \(currentAuthorizationStatus.rawValue)) — grant it in System Settings → Privacy & Security → Speech Recognition")
+                continuation.finish()
+                return
+            }
+
             guard let speechRecognizer, speechRecognizer.isAvailable else {
-                // No recognizer available (e.g. unsupported locale) — finish immediately.
+                WispLog.log("voice", "SFSpeechRecognizer unavailable (locale/offline model)")
                 continuation.finish()
                 return
             }
@@ -150,11 +182,15 @@ final class AppleSpeechProvider: TranscriptionProvider {
             do {
                 try audioEngine.start()
             } catch {
+                WispLog.log("voice", "AVAudioEngine failed to start: \(error.localizedDescription) (microphone permission?)")
                 continuation.finish()
                 return
             }
 
             self.recognitionTask = speechRecognizer.recognitionTask(with: bufferRecognitionRequest) { recognitionResult, error in
+                if let error {
+                    WispLog.log("voice", "recognition error: \(error.localizedDescription)")
+                }
                 if let recognitionResult {
                     let transcribedText = recognitionResult.bestTranscription.formattedString
                     if recognitionResult.isFinal {

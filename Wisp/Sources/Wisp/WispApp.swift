@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import AVFoundation
+import Speech
 
 // The application entry point. Wisp is a menu-bar-only companion: no dock icon, no main window.
 // It uses SwiftUI's MenuBarExtra for the menu-bar presence and an AppKit app delegate to set the
@@ -89,6 +91,54 @@ struct CompanionMenuContent: View {
 
             Divider()
 
+            // Live permission diagnostics — the difference between "nothing works lol" and knowing
+            // exactly which grant is missing. Each ungranted row is a button into the right pane.
+            VStack(alignment: .leading, spacing: DS.Spacing.small) {
+                permissionRow(
+                    name: "Accessibility",
+                    isGranted: AXIsProcessTrusted(),
+                    settingsPane: "Privacy_Accessibility",
+                    note: "hotkeys"
+                )
+                permissionRow(
+                    name: "Microphone",
+                    isGranted: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
+                    settingsPane: "Privacy_Microphone",
+                    note: "voice"
+                )
+                permissionRow(
+                    name: "Speech Recognition",
+                    isGranted: SFSpeechRecognizer.authorizationStatus() == .authorized,
+                    settingsPane: "Privacy_SpeechRecognition",
+                    note: "fallback STT"
+                )
+                permissionRow(
+                    name: "Screen Recording",
+                    isGranted: CGPreflightScreenCaptureAccess(),
+                    settingsPane: "Privacy_ScreenCapture",
+                    note: "screen context"
+                )
+            }
+
+            // One-click access to the log file every subsystem writes to.
+            Button {
+                NSWorkspace.shared.open(WispLog.logFileURL)
+            } label: {
+                HStack {
+                    Image(systemName: "doc.text.magnifyingglass")
+                    Text("Open Log")
+                    Spacer()
+                    Text("~/Library/Logs/Wisp.log")
+                        .font(.system(size: 10))
+                        .foregroundColor(DS.Colors.secondaryText)
+                }
+                .foregroundColor(DS.Colors.primaryText)
+            }
+            .buttonStyle(.plain)
+            .pointerCursorOnHover()
+
+            Divider()
+
             // A quit button. Every interactive control shows the pointing-hand cursor on hover.
             Button {
                 NSApplication.shared.terminate(nil)
@@ -104,6 +154,30 @@ struct CompanionMenuContent: View {
         }
         .padding(DS.Spacing.large)
         .frame(width: 300)
+    }
+
+    // One permission row: a green check when granted; a tappable amber warning that deep-links into
+    // the matching System Settings pane when not.
+    private func permissionRow(name: String, isGranted: Bool, settingsPane: String, note: String) -> some View {
+        Button {
+            guard !isGranted,
+                  let paneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(settingsPane)") else { return }
+            NSWorkspace.shared.open(paneURL)
+        } label: {
+            HStack(spacing: DS.Spacing.small) {
+                Image(systemName: isGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundColor(isGranted ? Color(DS.Colors.doneGreen) : Color(DS.Colors.amber))
+                Text(name)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(DS.Colors.primaryText)
+                Spacer()
+                Text(isGranted ? note : "grant →")
+                    .font(.system(size: 11))
+                    .foregroundColor(DS.Colors.secondaryText)
+            }
+        }
+        .buttonStyle(.plain)
+        .pointerCursorOnHover()
     }
 
     // One row in the gesture cheat sheet: the key combo on the left, what it does on the right.

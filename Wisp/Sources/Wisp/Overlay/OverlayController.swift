@@ -20,8 +20,12 @@ final class OverlayController {
     // cursor position) that the hosted SwiftUI views render.
     private unowned let appCoordinator: AppCoordinator
 
-    // (1) The full-screen click-through panel for teaching ink + cursor glyph.
-    private var teachingOverlayPanel: NSPanel?
+    // (1) The full-screen click-through panels for teaching ink + cursor glyph — ONE PER SCREEN, so
+    // the glyph can follow the cursor onto any monitor. The panel covering the main screen hosts the
+    // full teaching layer stack; secondary screens host a glyph-only layer. (Teaching-ink coordinates
+    // live in main-screen space today; route ink per-display when [POINT:…:screenN] lands.)
+    private var teachingOverlayPanels: [NSPanel] = []
+    private var screenParametersObserver: Any?
 
     // (2) The small, content-sized, clickable panel for task cards + toast.
     private var cardsPanel: NSPanel?
@@ -39,35 +43,67 @@ final class OverlayController {
         self.appCoordinator = appCoordinator
     }
 
-    // Creates (once) and shows both overlay panels over the main screen.
+    // Creates (once) and shows the overlay panels — one per screen — plus the cards panel.
     func show() {
-        if teachingOverlayPanel == nil {
-            teachingOverlayPanel = buildTeachingOverlayPanel()
+        if teachingOverlayPanels.isEmpty {
+            rebuildTeachingOverlayPanels()
         }
         if cardsPanel == nil {
             cardsPanel = buildCardsPanel()
         }
-        teachingOverlayPanel?.orderFrontRegardless()
+        for overlayPanel in teachingOverlayPanels {
+            overlayPanel.orderFrontRegardless()
+        }
         cardsPanel?.orderFrontRegardless()
         startTrackingGlobalMouseLocation()
+
+        // Monitors get plugged/unplugged; rebuild the per-screen panels when the layout changes.
+        if screenParametersObserver == nil {
+            screenParametersObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    WispLog.log("overlay", "screen parameters changed — rebuilding overlay panels")
+                    self?.rebuildTeachingOverlayPanels()
+                }
+            }
+        }
     }
 
-    // Hides both panels and stops mouse tracking (used for the transient-cursor fade-out).
+    // Hides the panels and stops mouse tracking (used for the transient-cursor fade-out).
     func hide() {
-        teachingOverlayPanel?.orderOut(nil)
+        for overlayPanel in teachingOverlayPanels {
+            overlayPanel.orderOut(nil)
+        }
         cardsPanel?.orderOut(nil)
         stopTrackingGlobalMouseLocation()
     }
 
-    // MARK: - (1) Teaching overlay panel (full-screen, click-through)
+    // MARK: - (1) Teaching overlay panels (full-screen, click-through, one per screen)
 
-    private func buildTeachingOverlayPanel() -> NSPanel {
-        // Cover the main screen. (Multi-monitor teaching ink is routed per-display by mapping global
-        // coordinates; the panel itself sits on the main screen where the menu bar lives.)
-        let mainScreenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+    private func rebuildTeachingOverlayPanels() {
+        for oldPanel in teachingOverlayPanels {
+            oldPanel.orderOut(nil)
+        }
+        teachingOverlayPanels.removeAll()
+
+        let mainScreen = NSScreen.main
+        for screen in NSScreen.screens {
+            let isMainScreen = (screen == mainScreen)
+            let panel = buildTeachingOverlayPanel(for: screen, hostsTeachingLayers: isMainScreen)
+            panel.orderFrontRegardless()
+            teachingOverlayPanels.append(panel)
+        }
+        WispLog.log("overlay", "built \(teachingOverlayPanels.count) overlay panel(s) across \(NSScreen.screens.count) screen(s)")
+    }
+
+    private func buildTeachingOverlayPanel(for screen: NSScreen, hostsTeachingLayers: Bool) -> NSPanel {
+        let screenFrame = screen.frame
 
         let panel = NSPanel(
-            contentRect: mainScreenFrame,
+            contentRect: screenFrame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -79,14 +115,21 @@ final class OverlayController {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        // Let every click fall through to the app underneath — this panel is display-only ink.
+        // Let every click fall through to the app underneath — these panels are display-only ink.
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
 
-        let teachingHostingView = NSHostingView(rootView: TeachingOverlayRootView(appCoordinator: appCoordinator))
-        teachingHostingView.frame = NSRect(origin: .zero, size: mainScreenFrame.size)
+        // The main screen hosts the full teaching stack (ink + pointer + glyph); secondary screens
+        // host the glyph alone so the companion still rides the cursor there.
+        let hostedRootView: AnyView = hostsTeachingLayers
+            ? AnyView(TeachingOverlayRootView(appCoordinator: appCoordinator, screenFrame: screenFrame))
+            : AnyView(GlyphOnlyOverlayRootView(appCoordinator: appCoordinator, screenFrame: screenFrame))
+
+        let teachingHostingView = NSHostingView(rootView: hostedRootView)
+        teachingHostingView.frame = NSRect(origin: .zero, size: screenFrame.size)
         teachingHostingView.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = teachingHostingView
+        panel.setFrame(screenFrame, display: true)
 
         return panel
     }
@@ -187,31 +230,39 @@ final class OverlayController {
         localMouseMoveMonitor = nil
     }
 
-    // Reads the current global mouse location and converts it into the teaching overlay's
-    // top-left-origin coordinate space so the SwiftUI glyph can be positioned with `.position`.
+    // Reads the current global mouse location and publishes it in BOTH coordinate spaces the views
+    // need: raw global bottom-left-origin (each per-screen overlay converts to its own space), and
+    // main-screen top-left-origin (the space the teaching layers' coordinates live in).
     private func updateCursorGlyphPositionFromCurrentMouseLocation() {
-        guard let teachingOverlayPanel else { return }
-        let panelFrame = teachingOverlayPanel.frame
-
         // NSEvent.mouseLocation is in global screen coordinates with a BOTTOM-left origin (AppKit).
         let mouseLocationBottomLeftOrigin = NSEvent.mouseLocation
+        appCoordinator.cursorGlobalBottomLeftPoint = mouseLocationBottomLeftOrigin
 
-        // Convert to the hosting view's TOP-left origin space, relative to the panel's frame.
-        let cursorXInOverlay = mouseLocationBottomLeftOrigin.x - panelFrame.origin.x
-        let cursorYInOverlay = panelFrame.size.height - (mouseLocationBottomLeftOrigin.y - panelFrame.origin.y)
-
-        appCoordinator.cursorGlyphPositionInOverlay = CGPoint(x: cursorXInOverlay, y: cursorYInOverlay)
+        let mainScreenFrame = NSScreen.main?.frame ?? .zero
+        appCoordinator.cursorGlyphPositionInOverlay = CGPoint(
+            x: mouseLocationBottomLeftOrigin.x - mainScreenFrame.origin.x,
+            y: mainScreenFrame.size.height - (mouseLocationBottomLeftOrigin.y - mainScreenFrame.origin.y)
+        )
     }
+}
+
+// Converts a global bottom-left-origin point into a screen-local TOP-left-origin point, and says
+// whether the point is on that screen at all. Shared by the per-screen glyph layers.
+private func cursorPositionInScreenSpace(globalPoint: CGPoint, screenFrame: NSRect) -> CGPoint? {
+    guard screenFrame.contains(globalPoint) else { return nil }
+    return CGPoint(
+        x: globalPoint.x - screenFrame.origin.x,
+        y: screenFrame.size.height - (globalPoint.y - screenFrame.origin.y)
+    )
 }
 
 // The click-through overlay content: teaching ink (bottom) and the cursor-trailing glyph (top).
 // Nothing here is interactive, so the whole view disables hit-testing and the panel is click-through.
 struct TeachingOverlayRootView: View {
     @ObservedObject var appCoordinator: AppCoordinator
-
-    // A small offset so the glyph rides just down-and-right of the actual cursor tip (matching the
-    // demos), rather than sitting directly on top of the arrow.
-    private let cursorGlyphOffset = CGSize(width: 14, height: 16)
+    // The frame (global, bottom-left origin) of the screen this overlay covers — used to decide
+    // whether the cursor (and so the glyph) is currently on this screen.
+    let screenFrame: NSRect
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -226,18 +277,49 @@ struct TeachingOverlayRootView: View {
                 pointerColor: appCoordinator.cursorGlyphColor
             )
 
-            // The cursor-trailing glyph, positioned at the tracked cursor location (plus offset).
-            if let cursorGlyphState = appCoordinator.currentCursorGlyphState {
-                CursorGlyphView(glyphState: cursorGlyphState, glyphColor: appCoordinator.cursorGlyphColor)
-                    .position(
-                        x: appCoordinator.cursorGlyphPositionInOverlay.x + cursorGlyphOffset.width,
-                        y: appCoordinator.cursorGlyphPositionInOverlay.y + cursorGlyphOffset.height
-                    )
-            }
+            CursorGlyphLayer(appCoordinator: appCoordinator, screenFrame: screenFrame)
         }
         // This layer must never intercept clicks — clicks belong to the app below.
         .allowsHitTesting(false)
         .ignoresSafeArea()
+    }
+}
+
+// The overlay content for secondary screens: just the cursor-trailing glyph, so the companion
+// still rides the cursor on monitors that don't host the teaching layers.
+struct GlyphOnlyOverlayRootView: View {
+    @ObservedObject var appCoordinator: AppCoordinator
+    let screenFrame: NSRect
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            CursorGlyphLayer(appCoordinator: appCoordinator, screenFrame: screenFrame)
+        }
+        .allowsHitTesting(false)
+        .ignoresSafeArea()
+    }
+}
+
+// The cursor-trailing glyph, rendered only while the cursor is actually on this layer's screen,
+// positioned just down-and-right of the cursor tip (matching the demos).
+private struct CursorGlyphLayer: View {
+    @ObservedObject var appCoordinator: AppCoordinator
+    let screenFrame: NSRect
+
+    private let cursorGlyphOffset = CGSize(width: 14, height: 16)
+
+    var body: some View {
+        if let cursorGlyphState = appCoordinator.currentCursorGlyphState,
+           let cursorPositionOnThisScreen = cursorPositionInScreenSpace(
+               globalPoint: appCoordinator.cursorGlobalBottomLeftPoint,
+               screenFrame: screenFrame
+           ) {
+            CursorGlyphView(glyphState: cursorGlyphState, glyphColor: appCoordinator.cursorGlyphColor)
+                .position(
+                    x: cursorPositionOnThisScreen.x + cursorGlyphOffset.width,
+                    y: cursorPositionOnThisScreen.y + cursorGlyphOffset.height
+                )
+        }
     }
 }
 
