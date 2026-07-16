@@ -504,10 +504,13 @@ final class VoiceEngine {
             // LIVE fallback: if the preferred provider died instantly with zero output (e.g. the
             // Parakeet sidecar exists but its Python package/model is broken) while the user is
             // still holding the key, restart the session on Apple Speech so the hold still works —
-            // don't make the user re-press to discover a different engine.
+            // don't make the user re-press to discover a different engine. The identity check
+            // matters: a user RELEASE nils activeTranscriptionProvider first, and must not trigger
+            // a spurious fallback session.
             if !receivedAnyUpdate,
                !(resolvedProvider is AppleSpeechProvider),
                !Task.isCancelled,
+               self.activeTranscriptionProvider === resolvedProvider,
                self.appCoordinator.companionState == .listening {
                 WispLog.log("voice", "provider produced nothing — retrying this session with Apple Speech")
                 self.activeTranscriptionProvider = nil
@@ -517,10 +520,12 @@ final class VoiceEngine {
     }
 
     func endListeningSession() {
+        // Ask the provider to finalize — the Parakeet sidecar transcribes the whole hold and emits
+        // its {"final": …} DURING shutdown. Deliberately do NOT cancel the consuming task: it must
+        // stay alive to drain that last transcript; it self-completes when the stream finishes
+        // (the process exits moments later, and the SIGKILL backstop covers a wedged child).
         activeTranscriptionProvider?.stopTranscribing()
         activeTranscriptionProvider = nil
-        activeListeningTask?.cancel()
-        activeListeningTask = nil
     }
 
     // Chooses a transcription provider: the local Parakeet sidecar when its script + python3 are

@@ -74,6 +74,20 @@ final class ParakeetSidecarProvider: TranscriptionProvider {
                 }
             }
 
+            // Mirror the sidecar's stderr into the log — this is where model downloads, python
+            // tracebacks, and audio-device complaints surface. Without it, a sidecar stuck
+            // downloading 600MB looks identical to one that's working silently.
+            standardErrorPipe.fileHandleForReading.readabilityHandler = { fileHandle in
+                let availableData = fileHandle.availableData
+                guard !availableData.isEmpty,
+                      let errorChunk = String(data: availableData, encoding: .utf8) else {
+                    return
+                }
+                for errorLine in errorChunk.split(separator: "\n") where !errorLine.trimmingCharacters(in: .whitespaces).isEmpty {
+                    WispLog.log("sidecar", String(errorLine.prefix(300)))
+                }
+            }
+
             do {
                 try launchedProcess.run()
                 self.sidecarProcess = launchedProcess
@@ -103,8 +117,17 @@ final class ParakeetSidecarProvider: TranscriptionProvider {
 
     private func terminateSidecarProcessIfRunning() {
         guard let sidecarProcess, sidecarProcess.isRunning else { return }
+        // SIGTERM asks the sidecar to finalize the utterance and emit it before exiting (the
+        // push-to-talk contract). If it wedges instead, escalate to SIGKILL so a stuck child can
+        // never block the next listening session.
         sidecarProcess.terminate()
         self.sidecarProcess = nil
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
+            if sidecarProcess.isRunning {
+                WispLog.log("voice", "sidecar ignored SIGTERM for 1.5s — sending SIGKILL")
+                kill(sidecarProcess.processIdentifier, SIGKILL)
+            }
+        }
     }
 
     // Parses one line of sidecar stdout. Recognized shapes: {"partial": "..."}, {"final": "..."},
@@ -121,6 +144,9 @@ final class ParakeetSidecarProvider: TranscriptionProvider {
             continuation.yield(.partial(partialText))
         } else if let finalText = decodedObject["final"] as? String {
             continuation.yield(.final(finalText))
+        } else if let statusText = decodedObject["status"] as? String {
+            // "listening" = mic open (everything before this was model load); "stopped" = clean exit.
+            WispLog.log("voice", "parakeet sidecar status: \(statusText)")
         } else if let errorText = decodedObject["error"] as? String {
             // Surface sidecar-reported problems (e.g. "parakeet-mlx not installed") in the log so a
             // silent no-transcript session is diagnosable.
