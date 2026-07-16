@@ -1,0 +1,32 @@
+# Secrets — never commit
+.env
+.env.*
+.dev.vars
+*.token
+secrets/
+
+# Swift / SwiftPM
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+
+# Node / Worker
+node_modules/
+.wrangler/
+dist/
+
+# Python sidecar
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Media (demo videos live outside the repo; keep it lean)
+*.mp4
+*.mov
+*.wav
+*.mp3
+
+# macOS
+.DS_Store

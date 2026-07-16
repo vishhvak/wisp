@@ -1,0 +1,478 @@
+<title>Clicky Rebuild — Workspace</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #FAF8F4; --panel: #FFFFFF; --panel-2: #F2EFE9; --ink: #1A1824; --ink-soft: #55505f;
+    --line: #E6E1D8; --brand: #7C5CFC; --brand-soft: #efeaff;
+    --blue: #4C7CF5; --green: #2FB673; --red: #FF3B30; --build: #16a06a; --amber: #C6841F; --coral: #E8776B;
+    --radius: 14px; --shadow: 0 1px 2px rgba(26,24,36,.06), 0 8px 24px rgba(26,24,36,.06);
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0E0E13; --panel: #17161f; --panel-2: #1f1e2a; --ink: #ECEAF4; --ink-soft: #a09bb0;
+      --line: #2a2836; --brand: #9a80ff; --brand-soft: #241f3a;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #FAF8F4; --panel: #FFFFFF; --panel-2: #F2EFE9; --ink: #1A1824; --ink-soft: #55505f;
+    --line: #E6E1D8; --brand: #7C5CFC; --brand-soft: #efeaff;
+    --shadow: 0 1px 2px rgba(26,24,36,.06), 0 8px 24px rgba(26,24,36,.06);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0E0E13; --panel: #17161f; --panel-2: #1f1e2a; --ink: #ECEAF4; --ink-soft: #a09bb0;
+    --line: #2a2836; --brand: #9a80ff; --brand-soft: #241f3a;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.6;
+         -webkit-font-smoothing: antialiased; }
+  a { color: var(--brand); }
+  h1,h2,h3 { font-family: var(--display); text-wrap: balance; letter-spacing: -.02em; line-height: 1.15; margin: 0; }
+  .wrap { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+
+  /* Header */
+  header { grid-column: 1 / -1; position: sticky; top: 0; z-index: 20; display: flex; align-items: center;
+           gap: 14px; padding: 14px 22px; background: color-mix(in srgb, var(--bg) 86%, transparent);
+           backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+  .mark { display: flex; align-items: center; gap: 9px; font-family: var(--display); font-weight: 800;
+          font-size: 20px; letter-spacing: -.03em; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--brand);
+         box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 22%, transparent); }
+  .tag { font-size: 12px; color: var(--ink-soft); border: 1px solid var(--line); padding: 3px 9px; border-radius: 999px; }
+  .spacer { flex: 1; }
+  .toggle { font: inherit; font-size: 13px; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+            border-radius: 999px; padding: 6px 13px; cursor: pointer; }
+  .toggle:hover { border-color: var(--brand); }
+
+  /* Nav rail */
+  nav { position: sticky; top: 57px; align-self: start; height: calc(100vh - 57px); overflow-y: auto;
+        padding: 18px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+  .navbtn { font: inherit; font-size: 14px; text-align: left; color: var(--ink-soft); background: none; border: 0;
+            border-radius: 9px; padding: 8px 12px; cursor: pointer; display: flex; align-items: center; gap: 9px; }
+  .navbtn:hover { background: var(--panel-2); color: var(--ink); }
+  .navbtn.on { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  .navbtn .ix { font-family: var(--mono); font-size: 11px; opacity: .6; width: 16px; }
+
+  main { padding: 34px clamp(20px, 5vw, 64px) 90px; max-width: 1040px; }
+  section { display: none; animation: fade .3s ease; }
+  section.on { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { section, .glyph b { animation: none !important; } }
+
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+             color: var(--brand); margin-bottom: 10px; }
+  h1.big { font-size: clamp(30px, 5vw, 46px); font-weight: 800; }
+  .lede { font-size: 18px; color: var(--ink-soft); max-width: 62ch; margin-top: 14px; }
+  h2.sec { font-size: 24px; margin: 40px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  h3.sub { font-size: 16px; margin: 22px 0 8px; }
+  p { max-width: 68ch; }
+
+  .grid { display: grid; gap: 14px; }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px;
+          box-shadow: var(--shadow); }
+  .card h3 { font-size: 15px; font-family: var(--display); }
+  .card p { font-size: 14px; color: var(--ink-soft); margin: 6px 0 0; }
+  .stat { font-family: var(--display); font-weight: 800; font-size: 30px; letter-spacing: -.03em; }
+  .stat small { font-size: 13px; font-weight: 500; color: var(--ink-soft); display: block; letter-spacing: 0; }
+
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px;
+          border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--brand)); }
+  .chip.done { --c: var(--green); } .chip.wip { --c: var(--amber); } .chip.todo { --c: var(--ink-soft); }
+  .chip.t1 { --c: var(--brand); } .chip.t2 { --c: var(--blue); } .chip.t3 { --c: var(--coral); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-soft); font-weight: 600; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+
+  /* timeline */
+  .tl { display: flex; flex-direction: column; gap: 0; margin-top: 8px; }
+  .ev { display: grid; grid-template-columns: 92px 1fr; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .ev .d { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+  .ev .who { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .ev .who.farza { color: var(--brand); } .ev .who.clicky { color: var(--coral); } .ev .who.vik { color: var(--blue); }
+  .ev .likes { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+  .ev.flag { background: linear-gradient(90deg, var(--brand-soft), transparent 60%); border-radius: 8px; padding-left: 10px; }
+
+  /* swatches */
+  .sw { display: flex; flex-direction: column; gap: 6px; }
+  .sw .b { height: 54px; border-radius: 10px; border: 1px solid var(--line); }
+  .sw code { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+  .sw span { font-size: 13px; font-weight: 600; }
+
+  /* cursor glyph mockups */
+  .glyphrow { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
+  .glyph { background: #0E0E13; border: 1px solid var(--line); border-radius: 12px; padding: 20px; width: 168px;
+           display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .glyph .stage { position: relative; height: 44px; display: flex; align-items: center; gap: 8px; }
+  .glyph .cur { width: 0; height: 0; border-left: 11px solid #d8d8e0; border-bottom: 7px solid transparent;
+                transform: rotate(-8deg); }
+  .glyph .bars { display: flex; align-items: center; gap: 3px; height: 20px; }
+  .glyph .bars i { width: 3px; background: var(--blue); border-radius: 2px; animation: eq 1s ease-in-out infinite; }
+  .glyph .bars i:nth-child(2){animation-delay:.15s} .glyph .bars i:nth-child(3){animation-delay:.3s} .glyph .bars i:nth-child(4){animation-delay:.45s}
+  @keyframes eq { 0%,100%{height:6px} 50%{height:18px} }
+  .glyph .arc { width: 18px; height: 18px; border: 2.5px solid color-mix(in srgb, var(--blue) 30%, transparent);
+                border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .glyph .tri { width: 0; height: 0; border-left: 13px solid var(--blue); border-top: 8px solid transparent; border-bottom: 8px solid transparent; }
+  .glyph label { font-size: 12px; color: #a09bb0; font-family: var(--mono); }
+
+  /* task card mock */
+  .taskcard { background: #17161f; border: 1px solid #2a2836; border-radius: 14px; padding: 15px; max-width: 320px;
+              box-shadow: var(--shadow); color: #ECEAF4; }
+  .taskcard .hd { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .taskcard .ti { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #cbc7d8; }
+  .taskcard .pill { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px;
+                    background: color-mix(in srgb, var(--green) 22%, transparent); color: var(--green); }
+  .taskcard .body { font-size: 13.5px; margin: 10px 0 12px; color: #ECEAF4; }
+  .taskcard .lbl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #837e93; margin: 8px 0 5px; }
+  .taskcard .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .taskcard .b2 { font-size: 12px; padding: 5px 11px; border-radius: 999px; background: #24222f; color: #d6d3e2; }
+
+  ul.clean { padding-left: 18px; } ul.clean li { margin: 5px 0; max-width: 68ch; }
+  .callout { background: var(--brand-soft); border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
+             border-radius: var(--radius); padding: 16px 18px; margin: 16px 0; }
+  .callout strong { color: var(--brand); }
+  code.k { font-family: var(--mono); font-size: 13px; background: var(--panel-2); padding: 1px 6px; border-radius: 5px; }
+  .foot { margin-top: 30px; font-size: 12px; color: var(--ink-soft); }
+
+  @media (max-width: 760px) {
+    .wrap { grid-template-columns: 1fr; }
+    nav { position: static; height: auto; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+    .navbtn .ix { display: none; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="mark"><span class="dot"></span>clicky</div>
+    <span class="tag">rebuild workspace</span>
+    <div class="spacer"></div>
+    <button class="toggle" id="tt">◐ theme</button>
+  </header>
+
+  <nav id="nav">
+    <button class="navbtn on" data-s="vision"><span class="ix">00</span>Vision</button>
+    <button class="navbtn" data-s="arc"><span class="ix">01</span>Product arc</button>
+    <button class="navbtn" data-s="design"><span class="ix">02</span>Design language</button>
+    <button class="navbtn" data-s="video"><span class="ix">03</span>Video analysis</button>
+    <button class="navbtn" data-s="re"><span class="ix">04</span>Reverse-engineering</button>
+    <button class="navbtn" data-s="arch"><span class="ix">05</span>Architecture</button>
+    <button class="navbtn" data-s="features"><span class="ix">06</span>Feature inventory</button>
+    <button class="navbtn" data-s="content"><span class="ix">07</span>Content strategy</button>
+    <button class="navbtn" data-s="progress"><span class="ix">08</span>Progress</button>
+  </nav>
+
+  <main>
+    <!-- VISION -->
+    <section class="on" id="vision">
+      <div class="eyebrow">clean-room rebuild</div>
+      <h1 class="big">An AI buddy that lives on your Mac.</h1>
+      <p class="lede">Clicky sits next to your cursor and sees what you see. Ask out loud and it walks you through what you're doing — or say "clicky agent" and it spins up a background agent to build, research, or act for you. This workspace documents rebuilding that demonstrated experience cleanly from scratch.</p>
+
+      <div class="grid g3" style="margin-top:26px">
+        <div class="card"><div class="stat">24<small>launch tweets analyzed</small></div></div>
+        <div class="card"><div class="stat">5<small>flagship demos, frame-by-frame</small></div></div>
+        <div class="card"><div class="stat">Fable 5<small>default model</small></div></div>
+        <div class="card"><div class="stat">14.2k<small>top demo (voice control)</small></div></div>
+      </div>
+
+      <div class="callout">
+        <strong>The load-bearing finding.</strong> The shipped product's UX is <em>not</em> what the original repo documents (a big floating panel with an arc-flying blue cursor). The relaunch language is minimal and cursor-adjacent: a menu-bar companion, a tiny cursor-trailing glyph, top-right task cards, and screenshot-anchored drawing. We rebuild to the <em>relaunch</em> language.
+      </div>
+
+      <h2 class="sec">Two modes, one companion</h2>
+      <div class="grid g2">
+        <div class="card"><h3>Ask / guide</h3><p>Talk to it. It answers with voice and draws or points directly on your screen to teach you — a live tutor for anything in any app.</p></div>
+        <div class="card"><h3>Agent</h3><p>"Clicky agent, …" spawns a background agent that does real work: organizing files, controlling native apps, research → CSV, even building &amp; launching a native Mac app.</p></div>
+      </div>
+
+      <h2 class="sec">Scope of the rebuild</h2>
+      <div class="grid g3">
+        <div class="card"><span class="chip t1">Tier 1 · core</span><p>Menu-bar app, push-to-talk + keyword, local Parakeet STT, screen capture, Claude Fable 5 via proxy, streamed Inworld voice, cursor glyph, task cards, completion toast, agent status stack.</p></div>
+        <div class="card"><span class="chip t2">Tier 2 · magic</span><p>On-screen teaching overlay (red draw + accumulating chips), screen-aware dictation into the focused app, native actions (Reminders/Calendar via EventKit).</p></div>
+        <div class="card"><span class="chip t3">Tier 3 · stretch</span><p>Spatial context (draw-to-direct), multi-agent concurrency, "build a Mac app" agent, Skills Library, per-user memory.</p></div>
+      </div>
+    </section>
+
+    <!-- PRODUCT ARC -->
+    <section id="arc">
+      <div class="eyebrow">apr → jul 2026</div>
+      <h1 class="big">The campaign, in ship order</h1>
+      <p class="lede">Clicky evolved from a voice companion into a voice-driven agentic assistant across ~11 weeks. Two account voices carry it: <b style="color:var(--brand)">@FarzaTV</b> ships flagship 4K demos ("Today we're shipping X…"), while <b style="color:var(--coral)">@heyclicky</b> posts as the product itself — a first-person mascot ("i am being fixed", "i am celebrating $10k mrr at a gas station").</p>
+
+      <div class="tl">
+        <div class="ev flag"><div class="d">Apr 26</div><div><span class="who farza">Farza</span> · <span class="likes">6.1k</span><br><b>Hero relaunch</b> — "simplest interface to talk to AI + spawn agents. Builds Mac apps, research, native Apple apps. 0 setup."</div></div>
+        <div class="ev"><div class="d">Apr 28–May 7</div><div><span class="who clicky">clicky</span><br>Mascot cadence: "i am being fixed" · "my creators are upgrading me" · "i am being used"</div></div>
+        <div class="ev flag"><div class="d">May 16</div><div><span class="who farza">Farza</span> · <span class="likes">2.2k</span><br><b>Ambient agent UX</b> — "understands your workflow, proactively nudges. Agents trapped in terminals — now use your voice."</div></div>
+        <div class="ev flag"><div class="d">May 30</div><div><span class="who farza">Farza</span> · <span class="likes">14.2k</span><br><b>Voice computer control</b> — "control my computer with just my voice. No hands. Future of OS." <span class="chip" style="--c:var(--brand)">top post</span></div></div>
+        <div class="ev"><div class="d">Jun 10</div><div><span class="who clicky">clicky</span> · <span class="likes">196</span><br><b>Drag files in</b> — "drag your files in and start chatting. available now"</div></div>
+        <div class="ev flag"><div class="d">Jun 16</div><div><span class="who farza">Farza</span> · <span class="likes">5.2k</span><br><b>Screen-drawing tutor</b> — "AI that draws on your screen. Claude Opus draws polygons, points pixel-perfect. Learning Pythagorean + FL Studio."</div></div>
+        <div class="ev"><div class="d">Jun 23–27</div><div><span class="who clicky">clicky</span><br>"let me help you install claude code" · "i can teach you figma motion" · "celebrating $10k mrr at a gas station"</div></div>
+        <div class="ev"><div class="d">Jul 2</div><div><span class="who clicky">clicky</span> · <span class="likes">464</span><br><b>Model switch</b> — "i now use claude fable 5 as my default model"</div></div>
+        <div class="ev flag"><div class="d">Jul 8</div><div><span class="who farza">Farza</span> · <span class="likes">2.8k</span><br><b>Spatial context</b> — "draw directly on your screen + pass it as context. AI doesn't know where to look — now show it."</div></div>
+        <div class="ev flag"><div class="d">Jul 14</div><div><span class="who farza">Farza</span> · <span class="likes">9.9k</span><br><b>Screen-aware dictation</b> — "~450ms STT. Dictate using your screen as context. In Claude Code it writes the prompt; in Gmail it replies in your voice."</div></div>
+      </div>
+    </section>
+
+    <!-- DESIGN LANGUAGE -->
+    <section id="design">
+      <div class="eyebrow">verified from 5 flagship demos</div>
+      <h1 class="big">Design language</h1>
+      <p class="lede">Minimal, cursor-adjacent, card-based. One bold accent (Clicky violet); the product's state colors act as semantic signals, never competing with the brand.</p>
+
+      <h2 class="sec">Palette</h2>
+      <div class="grid g3">
+        <div class="sw"><div class="b" style="background:#7C5CFC"></div><span>Brand violet</span><code>#7C5CFC</code></div>
+        <div class="sw"><div class="b" style="background:#4C7CF5"></div><span>Listening / running</span><code>#4C7CF5</code></div>
+        <div class="sw"><div class="b" style="background:#34C759"></div><span>Done</span><code>#34C759</code></div>
+        <div class="sw"><div class="b" style="background:#FF3B30"></div><span>AI teaching ink</span><code>#FF3B30</code></div>
+        <div class="sw"><div class="b" style="background:#3ECC8E"></div><span>User "build" stroke</span><code>#3ECC8E</code></div>
+        <div class="sw"><div class="b" style="background:#E8776B"></div><span>User "ask" stroke</span><code>#E8776B</code></div>
+        <div class="sw"><div class="b" style="background:#17161f"></div><span>Card charcoal</span><code>#17161F</code></div>
+        <div class="sw"><div class="b" style="background:#E0A23D"></div><span>Amber accent</span><code>#E0A23D</code></div>
+      </div>
+
+      <h2 class="sec">The cursor-trailing glyph</h2>
+      <p>The primary live feedback — a ~12px element that tracks the OS cursor. No big HUD. Three states:</p>
+      <div class="glyphrow">
+        <div class="glyph"><div class="stage"><span class="cur"></span><span class="bars"><i></i><i></i><i></i><i></i></span></div><label>listening</label></div>
+        <div class="glyph"><div class="stage"><span class="cur"></span><span class="arc"></span></div><label>thinking</label></div>
+        <div class="glyph"><div class="stage"><span class="cur"></span><span class="tri"></span></div><label>speaking</label></div>
+      </div>
+      <p style="margin-top:14px">State also surfaces as a menu-bar text label — <code class="k">Always on</code> / <code class="k">Listening</code> / <code class="k">Dictating</code> / <code class="k">Thinking</code> / <code class="k">Speaking</code>. Internal state machine (from leaked debug console): <code class="k">idle / listening / processing / responding</code>.</p>
+
+      <h2 class="sec">The task card</h2>
+      <p>The workhorse of agent mode — anchored top-right, doubles as the continue-this-thread surface.</p>
+      <div class="taskcard">
+        <div class="hd"><span class="ti">Build Spotify Mac</span><span class="pill">Done</span></div>
+        <div class="body">Your retro Spotify app is built and open on your Mac as SilverDisc.</div>
+        <div class="lbl">Suggested next</div>
+        <div class="pills"><span class="b2">Open the app folder</span><span class="b2">Add album art</span></div>
+        <div class="lbl">Follow up</div>
+        <div class="pills"><span class="b2">◔ Text</span><span class="b2">🎙 Voice</span></div>
+      </div>
+
+      <h2 class="sec">Two drawing languages</h2>
+      <div class="grid g2">
+        <div class="card"><h3 style="color:var(--red)">AI teaching ink</h3><p>Single red <code class="k">#FF3B30</code>. Crisp outlines, arrows, and pixel-precise dots + white-on-red chip labels that <b>accumulate into a persistent legend</b>. Mechanism: screenshot → model returns coordinates → overlay paints at absolute coords.</p></div>
+        <div class="card"><h3 style="color:var(--build)">User draw-to-direct</h3><p>Hold PTT + drag on live content. Thick translucent marker, <b>mode-coded</b>: coral <code class="k">#E8776B</code> = "tell me about this", mint <code class="k">#3ECC8E</code> = "build this". A waveform badge rides the stroke tip; the ink fades after capture.</p></div>
+      </div>
+
+      <h2 class="sec">Invocation gestures</h2>
+      <div class="scroll"><table>
+        <tr><th>Gesture</th><th>Mode</th></tr>
+        <tr><td class="num">hold ⌃ + ⌥</td><td>Push-to-talk (ask / agent voice)</td></tr>
+        <tr><td class="num">⌃ ×2 (double-tap)</td><td>Text mode</td></tr>
+        <tr><td class="num">⌃ ×3 (triple-tap)</td><td>Always-on mode</td></tr>
+        <tr><td class="num">hold fn + ⌃</td><td>Dictation (raw / screen-aware)</td></tr>
+        <tr><td class="num">hold PTT + drag</td><td>Draw-to-direct (spatial context)</td></tr>
+      </table></div>
+
+      <h2 class="sec">More verified surfaces (full-campaign sweep)</h2>
+      <div class="grid g2">
+        <div class="card"><h3>Proactive nudge</h3><p>A dismissible toast docked to the frontmost window, triggered by passive app recognition: "Connect Notion to Clicky?" + three concrete suggestion chips + ✕ No · 🕐 Not now · 🔗 Yes.</p></div>
+        <div class="card"><h3>Drag-files-in attach</h3><p>Dragging files to the top of the screen expands the panel into a drop target, resolving to per-file-type chips above an "ask HeyClicky…" input.</p></div>
+        <div class="card"><h3>Agents panel</h3><p>RUNNING / TODAY sections, per-task progress bars, "Open Agent" buttons — the fuller sibling of the task-card stack.</p></div>
+        <div class="card"><h3>Clicky Notes (memory)</h3><p>A categorized agent-memory wiki — the "memories of me" store that powers writing "in your voice". Cursor color is user-configurable (red/blue/yellow/green presets).</p></div>
+      </div>
+
+      <h2 class="sec">Type</h2>
+      <p>Deliberately Mac-native — SF Pro Display / system-ui — because this is a Mac-native product. Friendly lowercase wordmark; SF Mono for timestamps and data. The type <em>is</em> the OS the app lives in.</p>
+    </section>
+
+    <!-- VIDEO ANALYSIS -->
+    <section id="video">
+      <div class="eyebrow">frame-by-frame</div>
+      <h1 class="big">Flagship demo teardowns</h1>
+      <p class="lede">Each 4K demo was transcribed and sampled frame-by-frame. Full reports live in <code class="k">research/video-analysis/</code>.</p>
+
+      <div class="grid" style="margin-top:18px">
+        <div class="card"><h3>Hero relaunch · 3:43 · 6.1k</h3><p><b>UX bible.</b> Menu-bar purple icon, cursor-adjacent waveform + triangle glyphs, agent status-dot stack, top-right task cards (title · Running/Done pill · result sentence · Suggested-next · Text/Voice), blue completion toast. Demos: desktop cleanup, Reminders, IG-influencer CSV, and building "SilverDisc" — a retro Spotify controller — by voice.</p></div>
+        <div class="card"><h3>Voice control · 14.2k</h3><p><b>The viral one.</b> Hands-free "always on". Cursor glyph = the only live HUD (waveform→arc→triangle). Menu-bar text state. Actions are instant hard-cuts (Spotify, volume, Stripe); a background Google-Ads agent produces zero screen change — pure invisible delegation. Reminders opens to "show the work".</p></div>
+        <div class="card"><h3>Screen-drawing tutor · 5.2k</h3><p><b>The teacher.</b> Red <code class="k">#FF3B30</code> outlines + pixel-precise dots + accumulating white-on-red chip labels. Pythagorean proof built live on a Khan Academy video; FL Studio beat programmed by pointing at exact 16-step cells. Narration synced 1:1 to each drawn beat.</p></div>
+        <div class="card"><h3>Spatial context · 2.8k</h3><p><b>Draw-to-direct.</b> Hold PTT + drag on live content. Mode-coded marker: coral = ask, mint = build. Waveform badge on the stroke tip; ink fades on release; agent mode live-reloads the target and anchors a green confirmation toast to the changed element.</p></div>
+        <div class="card"><h3>Screen-aware dictation · 9.9k</h3><p><b>Latest flagship.</b> Hold <code class="k">fn+control</code>. Raw mode ("Dictating" pill) streams literal text; screen-aware mode ("Listening") treats speech as an instruction, reads the focused app, and pastes an app-appropriate block — a signed Gmail reply in your voice, a structured Claude Code prompt, a YC-flavored slide line. Surfaces the Skills Library.</p></div>
+      </div>
+    </section>
+
+    <!-- REVERSE ENGINEERING -->
+    <section id="re">
+      <div class="eyebrow">/Applications/HeyClicky.app · v1.0.38</div>
+      <h1 class="big">Reverse-engineering the shipped app</h1>
+      <p class="lede">Observable-behavior inventory only — no proprietary source is copied. The shipped app is far beyond the original repo: a voice-driven agentic assistant.</p>
+
+      <h2 class="sec">Headline finding</h2>
+      <div class="callout"><strong>Same lineage, two generations.</strong> A leaked dev path in the binary (<code class="k">…/clicky-closed/leanring-buddy/DictationDeepgramTranscriber.swift</code>) proves the shipped app is built from the same Xcode project as the local repo — the repo is an earlier snapshot; the shipped build is a superset with Realtime voice, a notch HUD, an agent runtime, a paywall, and feature flags.</div>
+
+      <h2 class="sec">What ships in the bundle (deep pass, verified)</h2>
+      <ul class="clean">
+        <li>Menu-bar only (<code class="k">LSUIElement</code>), unsandboxed, <code class="k">com.humansongs.clicky</code> v1.0.38; Sparkle 2.9.0 hourly updates; Sentry; PostHog analytics + <b>feature flags gating whole surfaces</b> (CatMode, ProactiveAgentSuggestions, TransparentPanes, UpcomingMeetings…).</li>
+        <li><b>Notch-anchored HUD is the primary surface</b> — collapsed/expanded states, a file-drag composer, auto-dismissing text responses with image galleries. Floating cards are satellites.</li>
+        <li><b>Codex agent runtime pinned at CLI 0.132.0</b> (model gpt-5.6-sol, ~194MB per-arch binaries + vendored ripgrep) and a standalone <b>Computer-Use Mach-O helper</b> exposed as a local <code class="k">computer-use</code> MCP server: snapshot-act-verify on every action, a strict never-steal-focus contract, AX-element addressing (coordinate clicks blocked).</li>
+        <li><b>Richer pointing vocabulary than the old repo</b>: <code class="k">[TARGET:x,y,r:label]</code>, <code class="k">[HOVER]</code>, <code class="k">[HIGHLIGHT]</code>, <code class="k">[SHAPE:arrow]</code>, <code class="k">[SHAPE:curve]</code> — TARGET/HOVER only for a single observable next action. Agent cursor: bezier-glide triangle, ring-ripple on landing, idle-hide ~1.5s.</li>
+        <li><b>Voice stack (shipped)</b>: always-on OpenAI Realtime mode with barge-in + per-topology AEC caching; dictation via <b>Deepgram</b> (the ~450ms path) plus AssemblyAI PTT; two voice-picker sets (OpenAI Realtime voices + a friendlier branded set). Our Parakeet-local STT is a deliberate divergence keeping the same UX contract.</li>
+        <li><b>Proactive agents are server-driven</b>: a <code class="k">/proactive-agents</code> endpoint feeds suggestion cards with daily slots, corner nudges, and approve/deny resolution reporting with quota gates.</li>
+        <li><b>PowerUp skills marketplace</b> with creator attribution, a "hatching" celebration (dedicated sounds), and pinned-to-notch states. Cross-session <b>user memory</b> is injected as a <code class="k">&lt;user_memory&gt;</code> system-prompt block.</li>
+        <li><b>Only the 14 bundled workflow skills are live</b> (artifacts, build-preview, creative-studio, dev-setup-doctor, email-assistant, google-workspace, repo-operator, research-report, cua-driver, doc, pdf, spreadsheet, frontend-design, obsidian, vercel-deploy). The big integration .md catalog (Notion, Linear, Airtable, iMessage, Spotify…) is <b>vendored from hermes-agent and inert</b> — onboarding-picker copy only.</li>
+        <li>Hard <b>paywall before agent launches</b> (plans, billing toggle, "maxed out") — Claude Haiku generates the launch-card labels. Remappable hotkeys; onboarding skip-shake gesture; 44MB onboarding + 26MB paywall intro videos with a 5.7-minute music bed.</li>
+      </ul>
+      <p>Full inventory: <code class="k">research/report-appbundle.md</code>.</p>
+    </section>
+
+    <!-- ARCHITECTURE -->
+    <section id="arch">
+      <div class="eyebrow">clean · minimal · modular</div>
+      <h1 class="big">Architecture</h1>
+      <p class="lede">Native SwiftUI + targeted AppKit bridges. Keys never ship in the app — everything sensitive is proxied.</p>
+
+      <h2 class="sec">Modules</h2>
+      <div class="scroll"><table>
+        <tr><th>Module</th><th>Responsibility</th></tr>
+        <tr><td class="num">ClickyApp</td><td>Menu-bar entry (LSUIElement), no dock icon, no main window.</td></tr>
+        <tr><td class="num">AppCoordinator</td><td>State machine: idle / listening / processing / responding / agent-running.</td></tr>
+        <tr><td class="num">VoiceEngine</td><td>PTT + keyword monitor · Parakeet STT sidecar client · TTS player. Provider-pluggable.</td></tr>
+        <tr><td class="num">ScreenContext</td><td>ScreenCaptureKit multi-monitor capture + coordinate mapping.</td></tr>
+        <tr><td class="num">ClaudeClient</td><td>Worker-proxied SSE chat; parses <code class="k">[DRAW:…]</code> / <code class="k">[POINT:…]</code> tags.</td></tr>
+        <tr><td class="num">OverlayWindow</td><td>Transparent full-screen NSPanel: cursor glyph, teaching ink, dictation pill.</td></tr>
+        <tr><td class="num">TaskCardManager</td><td>Top-right card stack, status pills, follow-up routing; agent badge stack.</td></tr>
+        <tr><td class="num">AgentRuntime</td><td>Spawns/tracks background runs; pluggable tools (EventKit, sandboxed shell, web).</td></tr>
+        <tr><td class="num">worker/</td><td>Cloudflare Worker proxy — <code class="k">/chat</code>, <code class="k">/tts</code>, client-token guard.</td></tr>
+      </table></div>
+
+      <h2 class="sec">Voice pipeline</h2>
+      <div class="grid g2">
+        <div class="card"><h3>STT — local</h3><p>Parakeet TDT 0.6B v3 (parakeet-mlx, Apple Silicon) via a Python sidecar streaming partials + finals; Silero VAD + Smart Turn V3. Fallback: Apple Speech / whisper. ~450ms feel.</p></div>
+        <div class="card"><h3>TTS — cloud, proxied</h3><p>Inworld <code class="k">inworld-tts-2</code>, Kurzgesagt voice, streamed; fallback ElevenLabs → OpenAI TTS → AVSpeechSynthesizer. All via the Worker.</p></div>
+      </div>
+      <p style="margin-top:14px"><b>Preserved as concepts</b> (not code) from the original repo: single shared URLSession for streaming, short-lived proxy tokens, multi-display coordinate conversion, the coordinate-tag pointing protocol.</p>
+    </section>
+
+    <!-- FEATURES -->
+    <section id="features">
+      <div class="eyebrow">what to build</div>
+      <h1 class="big">Feature inventory</h1>
+      <div class="scroll"><table>
+        <tr><th>Feature</th><th>Tier</th><th>Status</th></tr>
+        <tr><td>Menu-bar companion + state label</td><td><span class="chip t1">core</span></td><td><span class="chip todo">planned</span></td></tr>
+        <tr><td>Push-to-talk + "clicky" keyword</td><td><span class="chip t1">core</span></td><td><span class="chip todo">planned</span></td></tr>
+        <tr><td>Local Parakeet STT (sidecar) + fallbacks</td><td><span class="chip t1">core</span></td><td><span class="chip todo">planned</span></td></tr>
+        <tr><td>Claude Fable 5 via Worker proxy (SSE)</td><td><span class="chip t1">core</span></td><td><span class="chip wip">worker built</span></td></tr>
+        <tr><td>Inworld TTS (Kurzgesagt) + fallback</td><td><span class="chip t1">core</span></td><td><span class="chip wip">worker built</span></td></tr>
+        <tr><td>Cursor-trailing glyph (3 states)</td><td><span class="chip t1">core</span></td><td><span class="chip todo">planned</span></td></tr>
+        <tr><td>Task cards + completion toast + badge stack</td><td><span class="chip t1">core</span></td><td><span class="chip todo">planned</span></td></tr>
+        <tr><td>On-screen teaching ink (draw + chips)</td><td><span class="chip t2">magic</span></td><td><span class="chip todo">planned</span></td></tr>
+        <tr><td>Screen-aware dictation (fn+control)</td><td><span class="chip t2">magic</span></td><td><span class="chip todo">planned</span></td></tr>
+        <tr><td>Native actions (Reminders/Calendar · EventKit)</td><td><span class="chip t2">magic</span></td><td><span class="chip todo">planned</span></td></tr>
+        <tr><td>Spatial context (draw-to-direct)</td><td><span class="chip t3">stretch</span></td><td><span class="chip todo">planned</span></td></tr>
+        <tr><td>Skills Library + per-user memory</td><td><span class="chip t3">stretch</span></td><td><span class="chip todo">planned</span></td></tr>
+      </table></div>
+    </section>
+
+    <!-- CONTENT -->
+    <section id="content">
+      <div class="eyebrow">study the launch, not just the product</div>
+      <h1 class="big">Content strategy</h1>
+      <p class="lede">The launch is a masterclass. These patterns feed a reusable content-production skill suite for <code class="k">~/.claude</code> and <code class="k">~/.codex</code>.</p>
+
+      <h2 class="sec">The dual-channel system</h2>
+      <div class="grid g2">
+        <div class="card"><h3 style="color:var(--brand)">Founder flagship (@FarzaTV)</h3><p>Authority + reach. 4K landscape. "Today we're shipping X." Ships exactly one crisp new primitive per drop, with a live, un-cut demo.</p></div>
+        <div class="card"><h3 style="color:var(--coral)">Mascot diary (@heyclicky)</h3><p>Personality + relatability. Vertical clips in the product's own first-person voice. Keeps cadence between big drops and makes the brand lovable.</p></div>
+      </div>
+
+      <h2 class="sec">The flagship hook formula</h2>
+      <ul class="clean">
+        <li><b>Bold claim</b> — "we built an AI that can draw on your screen."</li>
+        <li><b>Acknowledge the crowd</b> — "many products already do this."</li>
+        <li><b>"So we went further"</b> — the pivot to the unique mechanism.</li>
+        <li><b>The magic, shown live</b> — real demo, escalating stakes (fun → utility → high-stakes).</li>
+        <li><b>"Demo:" + candid close</b> — often a "still a bit buggy" admission that builds trust.</li>
+      </ul>
+
+      <h2 class="sec">Mascot channel — three repeating templates</h2>
+      <ul class="clean">
+        <li><b>Sprint update</b>: "everything we're shipping" with a 3–5 person cast passing one mic hand-to-hand, big synced captions, version number as an on-camera prop ("v1.0.11" on a whiteboard).</li>
+        <li><b>Founder-solo narrative</b>: fixed outdoor seat, 1–2 screen-recording proof cutaways, ends on a "heyclicky.com" card.</li>
+        <li><b>Bare feature demo</b>: raw screen recording, no cast, 4–15 seconds ("drag your files in").</li>
+      </ul>
+
+      <h2 class="sec">Craft notes</h2>
+      <ul class="clean">
+        <li>Format split: 4K landscape for founder demos, 1080×1920 vertical for mascot clips; widescreen framed within a vertical-safe column for repurposing.</li>
+        <li>Consistent "keynote" compositing — inset app windows over a warm desert backdrop — unifies wildly different apps into one visual system.</li>
+        <li>Karaoke captions in 3–6 word chunks; brisk 1–3s cuts alternating talking-head and screen B-roll.</li>
+        <li>Reveals build across the campaign: pointer → drawing → spatial context → dictation. Each drop earns the next.</li>
+      </ul>
+    </section>
+
+    <!-- PROGRESS -->
+    <section id="progress">
+      <div class="eyebrow">live tracker</div>
+      <h1 class="big">Progress &amp; open questions</h1>
+      <div class="scroll"><table>
+        <tr><th>Workstream</th><th>Status</th></tr>
+        <tr><td>Acquire 24 tweets + 23 demo videos</td><td><span class="chip done">done</span></td></tr>
+        <tr><td>Frame-by-frame analysis of 5 flagships</td><td><span class="chip done">done</span></td></tr>
+        <tr><td>Repo + voice + infra + credentials mapped</td><td><span class="chip done">done</span></td></tr>
+        <tr><td>Clean architecture + design language</td><td><span class="chip done">done</span></td></tr>
+        <tr><td>Cloudflare Worker proxy (/tts Inworld + fallback)</td><td><span class="chip done">built · verified locally</span></td></tr>
+        <tr><td>App-bundle deep reverse-engineer</td><td><span class="chip done">done · research/report-appbundle.md</span></td></tr>
+        <tr><td>SwiftUI app implementation</td><td><span class="chip wip">in progress (codex)</span></td></tr>
+        <tr><td>Content-production skill suite (launch-playbook)</td><td><span class="chip done">installed · ~/.claude + ~/.codex</span></td></tr>
+        <tr><td>Non-flagship video sweep (18 mascot/secondary clips)</td><td><span class="chip done">done · all 24 videos covered</span></td></tr>
+        <tr><td>Clean-history publish → github.com/vishhvak</td><td><span class="chip todo">final</span></td></tr>
+      </table></div>
+
+      <h2 class="sec">Testing evidence</h2>
+      <ul class="clean">
+        <li><b>/tts verified end-to-end</b>: local <code class="k">wrangler dev</code> → Inworld <code class="k">inworld-tts-2</code> (Kurzgesagt voice) returned a real 128kbps/48kHz MP3, HTTP 200.</li>
+        <li><b>Graceful fallback verified</b>: a bad Inworld voiceId produced a 404 from Inworld and the Worker transparently served ElevenLabs audio, still HTTP 200.</li>
+      </ul>
+
+      <h2 class="sec">Blockers needing the user</h2>
+      <ul class="clean">
+        <li><b>Cloudflare deploy</b> — wrangler is unauthenticated; needs interactive <code class="k">npx wrangler login</code>.</li>
+        <li><b>/chat in production</b> — no Anthropic API key or Vercel AI Gateway key found locally; one must be provided (Gateway keys are minted in the Vercel dashboard).</li>
+        <li><b>Runtime app verification</b> — Screen Recording / Microphone / Accessibility TCC grants, and launching via Xcode (terminal <code class="k">xcodebuild</code> is deliberately off-limits).</li>
+      </ul>
+
+      <h2 class="sec">Open questions</h2>
+      <ul class="clean">
+        <li>Scope of "agent mode" for a clean build — how much of the shipped Codex/Composio/Cua breadth to replicate vs. a focused native tool layer.</li>
+        <li>Whether the menu-bar brand mark in the hero demo is the app icon or a macOS screen-record indicator (minor).</li>
+      </ul>
+
+      <h2 class="sec">Verification discipline</h2>
+      <p>One subagent hallucinated a whoami voice stack (Deepgram/LiveKit) around a correct voice ID. Caught by reading source: whoami is a life-wiki with no voice code; the real stack lives in <code class="k">~/Repos/projects/claude-voice</code> (Parakeet + Inworld/ElevenLabs). Load-bearing claims are verified against source before they enter the design.</p>
+
+      <div class="foot">Clicky rebuild workspace · maintained throughout the build · clean-room, no proprietary source copied.</div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const nav = document.getElementById('nav');
+  nav.addEventListener('click', e => {
+    const b = e.target.closest('.navbtn'); if (!b) return;
+    document.querySelectorAll('.navbtn').forEach(n => n.classList.toggle('on', n === b));
+    const id = b.dataset.s;
+    document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === id));
+    document.querySelector('main').scrollTo(0, 0);
+    window.scrollTo(0, 0);
+  });
+  const tt = document.getElementById('tt');
+  tt.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme')
+      || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  });
+</script>

@@ -1,0 +1,7 @@
+# Clicky voice sidecar dependencies.
+# Install with:  python3 -m pip install -r requirements.txt
+# Requires Apple Silicon (parakeet-mlx runs on the MLX framework).
+
+parakeet-mlx
+sounddevice
+numpy

@@ -1,0 +1,10 @@
+name = "clicky-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+# Secrets (set via `npx wrangler secret put <NAME>`), never committed:
+#   ANTHROPIC_API_KEY, INWORLD_API_KEY, ELEVENLABS_API_KEY, CLIENT_TOKEN
+# Non-secret vars below can be overridden per-environment.
+[vars]
+INWORLD_VOICE_ID = "default-gv-cgitsgv4b40lhxxqpza__kutz"
+ELEVENLABS_VOICE_ID = "aJxmRyDvcRx8qVUaBKM6"
