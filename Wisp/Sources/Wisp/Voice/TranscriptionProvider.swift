@@ -35,7 +35,7 @@ final class ParakeetSidecarProvider: TranscriptionProvider {
     // A handle we can check to decide whether to fall back before even starting.
     private(set) var didFailToLaunch = false
 
-    init(sidecarScriptPath: String = ClickyConfig.parakeetSidecarScriptPath) {
+    init(sidecarScriptPath: String = WispConfig.parakeetSidecarScriptPath) {
         self.sidecarScriptPath = sidecarScriptPath
     }
 

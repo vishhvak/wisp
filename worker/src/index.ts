@@ -1,5 +1,5 @@
 /**
- * Clicky Proxy Worker
+ * Wisp Proxy Worker
  *
  * The Mac app never holds API keys. Everything sensitive lives here as
  * Cloudflare secrets. Routes:

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// Manages the overlay windows Clicky paints on the user's screen. There are TWO panels, owned by a
+// Manages the overlay windows Wisp paints on the user's screen. There are TWO panels, owned by a
 // single controller, because they have fundamentally different mouse-event needs:
 //
 //   1. `teachingOverlayPanel` — a full-screen, CLICK-THROUGH panel hosting the teaching ink and the
@@ -108,7 +108,7 @@ final class OverlayController {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        // This panel DOES receive clicks (the card buttons need them) but never activates Clicky, so
+        // This panel DOES receive clicks (the card buttons need them) but never activates Wisp, so
         // the user's foreground app keeps focus while they click a card action.
         panel.ignoresMouseEvents = false
         panel.hidesOnDeactivate = false
@@ -163,7 +163,7 @@ final class OverlayController {
 
     // Installs global + local mouse-move monitors and seeds an initial cursor position so the glyph
     // can ride next to the OS cursor. WHY both monitors: the global monitor sees movement over other
-    // apps, while the local monitor covers movement over Clicky's own overlay panels.
+    // apps, while the local monitor covers movement over Wisp's own overlay panels.
     private func startTrackingGlobalMouseLocation() {
         updateCursorGlyphPositionFromCurrentMouseLocation()
 
@@ -217,6 +217,14 @@ struct TeachingOverlayRootView: View {
         ZStack(alignment: .topLeading) {
             // Teaching ink spans the whole overlay at absolute coordinates.
             TeachingOverlayView(teachingAnnotations: appCoordinator.teachingAnnotations)
+
+            // The agent pointer glides (quadratic bezier) to each new annotation, ripples on
+            // landing, and idle-hides — layered above the ink it announces, below the user's glyph.
+            AgentPointerView(
+                targetPoint: appCoordinator.agentPointerTarget,
+                flightStartFallbackPoint: appCoordinator.cursorGlyphPositionInOverlay,
+                pointerColor: appCoordinator.cursorGlyphColor
+            )
 
             // The cursor-trailing glyph, positioned at the tracked cursor location (plus offset).
             if let cursorGlyphState = appCoordinator.currentCursorGlyphState {

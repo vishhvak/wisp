@@ -1,11 +1,11 @@
 import SwiftUI
 import AppKit
 
-// The application entry point. Clicky is a menu-bar-only companion: no dock icon, no main window.
+// The application entry point. Wisp is a menu-bar-only companion: no dock icon, no main window.
 // It uses SwiftUI's MenuBarExtra for the menu-bar presence and an AppKit app delegate to set the
 // activation policy to .accessory (which is what removes the dock icon).
 @main
-struct ClickyApp: App {
+struct WispApp: App {
     // Bridge in an AppKit delegate so we can set NSApp.setActivationPolicy(.accessory) at launch and
     // own the AppCoordinator's lifecycle. SwiftUI's App type alone can't set the accessory policy.
     @NSApplicationDelegateAdaptor(CompanionAppDelegate.self) private var companionAppDelegate
@@ -69,7 +69,7 @@ struct CompanionMenuContent: View {
             HStack(spacing: DS.Spacing.small) {
                 Image(systemName: "cursorarrow.rays")
                     .foregroundColor(DS.Colors.brand)
-                Text("Clicky")
+                Text("Wisp")
                     .font(.system(size: 15, weight: .bold))
                 Spacer()
                 Text(appCoordinator.currentDisplayLabel)
@@ -81,7 +81,7 @@ struct CompanionMenuContent: View {
 
             // The invocation-gesture cheat sheet.
             VStack(alignment: .leading, spacing: DS.Spacing.small) {
-                gestureRow(gesture: "Hold ⌃ control + ⌥ option", description: "Talk to Clicky")
+                gestureRow(gesture: "Hold ⌃ control + ⌥ option", description: "Talk to Wisp")
                 gestureRow(gesture: "Hold fn + control", description: "Dictate into any field")
                 gestureRow(gesture: "Double-tap Control", description: "Text mode")
                 gestureRow(gesture: "Triple-tap Control", description: "Always-on mode")
@@ -95,7 +95,7 @@ struct CompanionMenuContent: View {
             } label: {
                 HStack {
                     Image(systemName: "power")
-                    Text("Quit Clicky")
+                    Text("Quit Wisp")
                 }
                 .foregroundColor(DS.Colors.primaryText)
             }

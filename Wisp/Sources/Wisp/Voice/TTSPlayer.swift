@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 
-// Plays Clicky's spoken responses. Text is POSTed to the Cloudflare Worker's /tts route (which
+// Plays Wisp's spoken responses. Text is POSTed to the Cloudflare Worker's /tts route (which
 // holds the ElevenLabs key and forwards to ElevenLabs), and the returned audio bytes are played
 // back locally via AVAudioPlayer. `isSpeaking` is published-style state the overlay uses to show
 // the "responding" cursor glyph and to schedule the transient-cursor fade-out.
@@ -18,7 +18,7 @@ final class TTSPlayer: NSObject, ObservableObject {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
-        let textToSpeechURL = ClickyConfig.workerBaseURL.appendingPathComponent("tts")
+        let textToSpeechURL = WispConfig.workerBaseURL.appendingPathComponent("tts")
         var textToSpeechRequest = URLRequest(url: textToSpeechURL)
         textToSpeechRequest.httpMethod = "POST"
         textToSpeechRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")

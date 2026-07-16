@@ -1,8 +1,8 @@
 {
-  "name": "clicky-proxy",
+  "name": "wisp-proxy",
   "version": "0.1.0",
   "private": true,
-  "description": "Cloudflare Worker proxy for Clicky — holds API keys, exposes /chat and /tts.",
+  "description": "Cloudflare Worker proxy for Wisp — holds API keys, exposes /chat and /tts.",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

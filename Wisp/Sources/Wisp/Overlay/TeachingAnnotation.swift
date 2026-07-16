@@ -46,4 +46,22 @@ struct TeachingAnnotation: Identifiable, Equatable {
         self.label = label
         self.displayIndex = displayIndex
     }
+
+    // The single point that best represents "where this annotation is" — the destination the agent
+    // pointer glides to just before the ink appears. Arrows and curves anchor at their TIP (that's
+    // what they're pointing at); rects at their center.
+    var anchorPoint: CGPoint {
+        switch shape {
+        case .rect(let rectangle):
+            return CGPoint(x: rectangle.midX, y: rectangle.midY)
+        case .arrow(_, let tipPoint):
+            return tipPoint
+        case .curve(_, _, let tipPoint):
+            return tipPoint
+        case .dot(let point), .chip(let point):
+            return point
+        case .target(let centerPoint, _), .hover(let centerPoint, _):
+            return centerPoint
+        }
+    }
 }

@@ -26,7 +26,7 @@ final class ClaudeClient {
     func streamResponse(
         userMessageText: String,
         imageAttachments: [ChatImageAttachment] = [],
-        modelIdentifier: String = ClickyConfig.defaultClaudeModel
+        modelIdentifier: String = WispConfig.defaultClaudeModel
     ) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             // Run the network + parse work in a detached task so the stream returns immediately.
@@ -87,7 +87,7 @@ final class ClaudeClient {
         imageAttachments: [ChatImageAttachment],
         modelIdentifier: String
     ) throws -> URLRequest {
-        let chatURL = ClickyConfig.workerBaseURL.appendingPathComponent("chat")
+        let chatURL = WispConfig.workerBaseURL.appendingPathComponent("chat")
         var chatRequest = URLRequest(url: chatURL)
         chatRequest.httpMethod = "POST"
         chatRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")

@@ -4,15 +4,15 @@ import SwiftUI
 // enum than the full CompanionState, because only these three states produce a glyph: while idle
 // or running a background agent there is nothing riding next to the cursor.
 enum CursorGlyphState: Equatable {
-    // Animated vertical waveform bars — the user is speaking / Clicky is listening.
+    // Animated vertical waveform bars — the user is speaking / Wisp is listening.
     case listening
-    // A spinning arc — Clicky is thinking / processing the request.
+    // A spinning arc — Wisp is thinking / processing the request.
     case processing
-    // A solid right-pointing triangle — Clicky is speaking (TTS playing).
+    // A solid right-pointing triangle — Wisp is speaking (TTS playing).
     case responding
 }
 
-// A ~12pt glyph that rides just to the right of the OS cursor and communicates Clicky's live
+// A ~12pt glyph that rides just to the right of the OS cursor and communicates Wisp's live
 // state. This is THE primary ambient feedback surface in the shipped design language — not a big
 // HUD. The glyph color is configurable (blue by default) and all motion respects Reduce Motion.
 struct CursorGlyphView: View {

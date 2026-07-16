@@ -1,6 +1,6 @@
-# Clicky
+# Wisp
 
-A macOS menu-bar companion (macOS 14+). Clicky lives entirely in the status bar — no dock icon, no
+A macOS menu-bar companion (macOS 14+). Wisp lives entirely in the status bar — no dock icon, no
 main window. Hold a hotkey and talk; it captures a screenshot of your screen, streams the request to
 Claude through a Cloudflare Worker proxy, speaks the answer back, and can paint teaching ink (red
 outlines / arrows / dots / labels) directly on your screen. Background agent work surfaces as
@@ -17,9 +17,9 @@ Build with **`swift build` only** — do NOT use `xcodebuild`, which invalidates
 Accessibility, and Microphone on every rebuild.
 
 ```bash
-cd Clicky
+cd Wisp
 swift build            # compiles the executable
-swift run Clicky       # launches the menu-bar app
+swift run Wisp       # launches the menu-bar app
 ```
 
 The app has no external Swift dependencies — everything (SwiftUI, AppKit, ScreenCaptureKit,
@@ -29,13 +29,13 @@ AVFoundation, Speech) ships with macOS.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `CLICKY_WORKER_URL` | `http://127.0.0.1:8788` | Base URL of the Cloudflare Worker proxy (`/chat`, `/tts`). |
-| `CLICKY_SIDECAR_PATH` | `../voice-sidecar/parakeet_stt.py` | Path to the Parakeet STT Python sidecar. |
-| `CLICKY_CURSOR_COLOR` | `blue` | Cursor glyph color: `red` / `blue` / `yellow` / `green`. |
+| `WISP_WORKER_URL` | `http://127.0.0.1:8788` | Base URL of the Cloudflare Worker proxy (`/chat`, `/tts`). |
+| `WISP_SIDECAR_PATH` | `../voice-sidecar/parakeet_stt.py` | Path to the Parakeet STT Python sidecar. |
+| `WISP_CURSOR_COLOR` | `blue` | Cursor glyph color: `red` / `blue` / `yellow` / `green`. |
 
 ## Permissions
 
-Because Clicky observes global input, captures the screen, and records audio, macOS requires the
+Because Wisp observes global input, captures the screen, and records audio, macOS requires the
 user to grant three permissions. **Grant them against a stable app path** — if the built binary
 moves (e.g. a new `.build` location), macOS treats it as a new app and the grants reset.
 

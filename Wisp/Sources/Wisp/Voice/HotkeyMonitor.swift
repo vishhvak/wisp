@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 
-// The distinct invocation gestures Clicky recognizes, matching the verified gesture set:
+// The distinct invocation gestures Wisp recognizes, matching the verified gesture set:
 //   • hold ctrl+option        → push-to-talk (ask/agent voice)
 //   • hold fn+control         → dictation
 //   • double-tap Control      → text mode
@@ -15,12 +15,12 @@ enum HotkeyEvent: Equatable {
     case controlTripleTapped   // always-on mode
 }
 
-// Monitors system-wide modifier-key activity to detect Clicky's invocation gestures.
+// Monitors system-wide modifier-key activity to detect Wisp's invocation gestures.
 //
 // WHY a listen-only CGEvent tap (kCGEventTapOptionListenOnly): modifier-only shortcuts like
 // "hold ctrl+option" are detected far more reliably through a low-level event tap than through an
 // AppKit global monitor, and listen-only means we observe events without consuming/altering them —
-// Clicky never swallows the user's keystrokes. This DOES require the Accessibility permission; if
+// Wisp never swallows the user's keystrokes. This DOES require the Accessibility permission; if
 // the tap cannot be created (permission not yet granted), we degrade gracefully to an NSEvent
 // global monitor so the app still functions, just slightly less reliably.
 final class HotkeyMonitor {

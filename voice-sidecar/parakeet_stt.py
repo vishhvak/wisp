@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Parakeet speech-to-text sidecar for Clicky.
+"""Parakeet speech-to-text sidecar for Wisp.
 
 This script is launched as a child process by the Swift app (see
-Sources/Clicky/Voice/TranscriptionProvider.swift). It captures the microphone locally on Apple
+Sources/Wisp/Voice/TranscriptionProvider.swift). It captures the microphone locally on Apple
 Silicon using the Parakeet TDT 0.6B v3 model (via parakeet-mlx), performs lightweight
 silence-based utterance chunking, and prints newline-delimited JSON to stdout:
 

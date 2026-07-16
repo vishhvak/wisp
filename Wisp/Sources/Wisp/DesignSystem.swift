@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The design system holds every visual token used across Clicky's surfaces (cursor
+// The design system holds every visual token used across Wisp's surfaces (cursor
 // glyph, task cards, toasts, teaching overlay). Centralizing these values here means a
 // single source of truth for the "relaunch" visual language documented in research/DESIGN.md,
 // and lets any view refer to a named token instead of an inline literal.

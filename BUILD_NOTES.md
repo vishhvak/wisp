@@ -1,9 +1,9 @@
-# Clicky Rebuild — Build Notes
+# Wisp Rebuild — Build Notes
 
-Clean-room SwiftPM rebuild of the Clicky menu-bar companion, built from the authoritative specs in
+Clean-room SwiftPM rebuild of the Wisp menu-bar companion, built from the authoritative specs in
 `research/DESIGN.md`, the video-analysis reports, and `research/report-appbundle.md`. No proprietary
 source was opened. Builds with `swift build` only (never `xcodebuild`, which would invalidate TCC
-permissions). Repo now lives at `/Users/vish/Repos/clicky`.
+permissions). Repo now lives at `/Users/vish/Repos/wisp`.
 
 ## Round 2 changes (from app-bundle RE)
 
@@ -31,20 +31,20 @@ permissions). Repo now lives at `/Users/vish/Repos/clicky`.
    `notchExpandedText` / `latestResponseLine` state.
 
 Round-2 build: `swift build` exits 0 from scratch (0 warnings). Note: `.build` had to be wiped once
-because the module cache carried the old `clicky-rebuild` path.
+because the module cache carried the old `wisp-rebuild` path.
 
 ## File tree
 
 ```
-clicky-rebuild/
-├── Clicky/
-│   ├── Package.swift                         # macOS 14, executable "Clicky", NO external deps
+wisp-rebuild/
+├── Wisp/
+│   ├── Package.swift                         # macOS 14, executable "Wisp", NO external deps
 │   ├── README.md                             # build/run + permissions
-│   └── Sources/Clicky/
-│       ├── ClickyApp.swift                   # @main App, MenuBarExtra, .accessory policy (no dock)
+│   └── Sources/Wisp/
+│       ├── WispApp.swift                   # @main App, MenuBarExtra, .accessory policy (no dock)
 │       ├── AppCoordinator.swift              # @MainActor state machine + VoiceEngine + TaskCardStore
 │       ├── DesignSystem.swift                # DS tokens (hex colors, radii, spacing) + Color(hex:)
-│       ├── ClickyConfig.swift                # workerBaseURL / sidecar path / cursor color (env-driven)
+│       ├── WispConfig.swift                # workerBaseURL / sidecar path / cursor color (env-driven)
 │       ├── PointerCursorOnHover.swift        # shared .pointerCursorOnHover() modifier
 │       ├── Overlay/
 │       │   ├── OverlayController.swift        # TWO panels: click-through teaching overlay + clickable top-right cards panel
@@ -73,19 +73,19 @@ clicky-rebuild/
 
 ## Build result
 
-`swift build` from `clicky-rebuild/Clicky` exits 0. Final clean (`rm -rf .build`) build output:
+`swift build` from `wisp-rebuild/Wisp` exits 0. Final clean (`rm -rf .build`) build output:
 
 ```
 Building for debugging...
-[0/6] Write Clicky-entitlement.plist
+[0/6] Write Wisp-entitlement.plist
 [1/6] Write sources
 [2/6] Write swift-version--1AB21518FC5DEDBE.txt
-[4/24] Compiling Clicky OverlayController.swift
+[4/24] Compiling Wisp OverlayController.swift
 ...
-[21/24] Emitting module Clicky
-[22/25] Compiling Clicky TranscriptionProvider.swift
-[23/25] Linking Clicky
-[24/25] Applying Clicky
+[21/24] Emitting module Wisp
+[22/25] Compiling Wisp TranscriptionProvider.swift
+[23/25] Linking Wisp
+[24/25] Applying Wisp
 Build complete! (49.78s)
 ```
 
@@ -133,11 +133,11 @@ The Python sidecar was syntax-checked and run: with deps absent it prints
   (`handleSuggestedNextAction`, follow-ups) just re-enter the voice pipeline as a placeholder — there
   is no agent runtime behind them (see above).
 - **No `MenuBarExtra`-triggered listening yet**: listening starts from hotkey gestures; the always-on
-  keyword-trigger ("Hey Clicky") path is not implemented (would need continuous STT + wake-word).
+  keyword-trigger ("Hey Wisp") path is not implemented (would need continuous STT + wake-word).
 - **No memory store, Skills Library, proactive nudges, or draw-to-direct (spatial) gestures** — these
   are Tier 2/3 surfaces in the design and are out of scope for this scaffold.
 - **The Worker isn't required to compile/run the app**, but `/chat` and `/tts` calls will fail until
-  a Worker is running at `CLICKY_WORKER_URL` (default `http://127.0.0.1:8788`). Failures are handled
+  a Worker is running at `WISP_WORKER_URL` (default `http://127.0.0.1:8788`). Failures are handled
   gracefully (no crash; empty/no response).
 - Teaching-ink coordinates are consumed directly in overlay space; the display-index routing field
   is parsed and stored (now for TARGET/HOVER/HIGHLIGHT/SHAPE too) but the overlay currently paints
@@ -150,11 +150,11 @@ The Python sidecar was syntax-checked and run: with deps absent it prints
 
 ## Runtime steps needing user permissions
 
-Running the app (`swift run Clicky`) requires the user to grant, against a **stable binary path**:
+Running the app (`swift run Wisp`) requires the user to grant, against a **stable binary path**:
 1. **Accessibility** — for the global hotkey CGEvent tap (else it silently falls back to NSEvent).
 2. **Screen Recording** — for ScreenCaptureKit screenshots (else requests go text-only).
 3. **Microphone** (+ **Speech Recognition** if the Apple fallback is used) — for voice capture.
 
 For local end-to-end voice, also run `pip install -r voice-sidecar/requirements.txt` (Apple Silicon)
-and start a Cloudflare Worker exposing `/chat` and `/tts`, then set `CLICKY_WORKER_URL`.
+and start a Cloudflare Worker exposing `/chat` and `/tts`, then set `WISP_WORKER_URL`.
 ```

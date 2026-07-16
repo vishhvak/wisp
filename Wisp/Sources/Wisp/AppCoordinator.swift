@@ -29,6 +29,10 @@ final class AppCoordinator: ObservableObject {
     // The AI teaching ink currently painted on screen (accumulates through a lesson).
     @Published private(set) var teachingAnnotations: [TeachingAnnotation] = []
 
+    // Where the agent pointer should currently glide to: the anchor of the newest teaching
+    // annotation. nil hides the pointer (no active teaching target).
+    @Published private(set) var agentPointerTarget: CGPoint?
+
     // The currently-visible completion toast message, if any.
     @Published private(set) var activeToastMessage: String?
 
@@ -110,7 +114,7 @@ final class AppCoordinator: ObservableObject {
 
     // The configured cursor glyph color (blue by default, user-configurable).
     var cursorGlyphColor: Color {
-        ClickyConfig.cursorGlyphColor
+        WispConfig.cursorGlyphColor
     }
 
     // The SF Symbol name for the menu-bar icon, reflecting state so the icon fills/highlights on
@@ -190,7 +194,9 @@ final class AppCoordinator: ObservableObject {
                 case .textDelta(let textDelta):
                     accumulatedSpokenText += textDelta
                 case .teachingAnnotation(let annotation):
-                    // Accumulate teaching ink so it builds up into a persistent legend.
+                    // Fly the agent pointer to the new annotation FIRST (it draws the eye), then
+                    // accumulate the ink so it builds up into a persistent legend.
+                    agentPointerTarget = annotation.anchorPoint
                     teachingAnnotations.append(annotation)
                 }
             }
@@ -235,9 +241,10 @@ final class AppCoordinator: ObservableObject {
 
     // MARK: - Teaching ink
 
-    // Clears all accumulated teaching ink (e.g. when a lesson ends).
+    // Clears all accumulated teaching ink (e.g. when a lesson ends) and dismisses the pointer.
     func clearTeachingAnnotations() {
         teachingAnnotations.removeAll()
+        agentPointerTarget = nil
     }
 
     // MARK: - Task cards + toast

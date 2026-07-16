@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 // A view modifier that shows the macOS pointing-hand cursor while the pointer is over the view.
-// Every interactive element in Clicky must communicate clickability on hover; centralizing the
+// Every interactive element in Wisp must communicate clickability on hover; centralizing the
 // AppKit NSCursor bridging here means each button just writes `.pointerCursorOnHover()` instead of
 // repeating the same onHover push/pop logic (which is easy to get wrong and leak a stuck cursor).
 struct PointerCursorOnHover: ViewModifier {
