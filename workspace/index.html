@@ -426,7 +426,7 @@
         <tr><td>Clean architecture + design language</td><td><span class="chip done">done</span></td></tr>
         <tr><td>Cloudflare Worker proxy (/tts Inworld + fallback)</td><td><span class="chip done">built · verified locally</span></td></tr>
         <tr><td>App-bundle deep reverse-engineer</td><td><span class="chip done">done · research/report-appbundle.md</span></td></tr>
-        <tr><td>SwiftUI app implementation (19 files, swift build ✓)</td><td><span class="chip done">v1 built · round 2 in progress</span></td></tr>
+        <tr><td>SwiftUI app implementation (21 files, ~3.5k lines, swift build ✓ zero warnings)</td><td><span class="chip done">v1 + round 2 (clickable cards · TARGET/HOVER/SHAPE ink · notch HUD)</span></td></tr>
         <tr><td>Content-production skill suite (launch-playbook)</td><td><span class="chip done">installed · ~/.claude + ~/.codex</span></td></tr>
         <tr><td>Non-flagship video sweep (18 mascot/secondary clips)</td><td><span class="chip done">done · all 24 videos covered</span></td></tr>
         <tr><td>Clean-history publish → <a href="https://github.com/vishhvak/clicky">github.com/vishhvak/clicky</a></td><td><span class="chip done">published · fresh history · no secrets</span></td></tr>
@@ -438,11 +438,12 @@
         <li><b>Graceful fallback verified</b>: a bad Inworld voiceId produced a 404 from Inworld and the Worker transparently served ElevenLabs audio, still HTTP 200.</li>
       </ul>
 
-      <h2 class="sec">Blockers needing the user</h2>
+      <h2 class="sec">Blockers needing the user (all remaining work is gated here)</h2>
       <ul class="clean">
-        <li><b>Cloudflare deploy</b> — wrangler is unauthenticated; needs interactive <code class="k">npx wrangler login</code>.</li>
-        <li><b>/chat in production</b> — no Anthropic API key or Vercel AI Gateway key found locally; one must be provided (Gateway keys are minted in the Vercel dashboard).</li>
-        <li><b>Runtime app verification</b> — Screen Recording / Microphone / Accessibility TCC grants, and launching via Xcode (terminal <code class="k">xcodebuild</code> is deliberately off-limits).</li>
+        <li><b>Runtime app verification</b> — the app compiles clean but its behavior needs macOS permission grants: run <code class="k">swift run</code> (or open the package in Xcode), then grant <b>Microphone</b>, <b>Screen Recording</b>, and <b>Accessibility</b> in System Settings → Privacy &amp; Security. Terminal <code class="k">xcodebuild</code> was deliberately never run (it invalidates TCC grants).</li>
+        <li><b>Cloudflare deploy</b> — wrangler is unauthenticated; run <code class="k">npx wrangler login</code> in <code class="k">worker/</code>, then set the three secrets and <code class="k">npx wrangler deploy</code>. (/tts already verified end-to-end via local <code class="k">wrangler dev</code>.)</li>
+        <li><b>/chat in production</b> — provide an Anthropic API key (or mint a Vercel AI Gateway key in the dashboard) as the <code class="k">ANTHROPIC_API_KEY</code> worker secret.</li>
+        <li><b>Parakeet model download</b> — first run of <code class="k">voice-sidecar/parakeet_stt.py</code> pulls the ~600MB Parakeet TDT 0.6B v3 model; needs <code class="k">pip install -r requirements.txt</code>.</li>
       </ul>
 
       <h2 class="sec">Open questions</h2>
