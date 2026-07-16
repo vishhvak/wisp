@@ -300,8 +300,11 @@ struct GlyphOnlyOverlayRootView: View {
     }
 }
 
-// The cursor-trailing glyph, rendered only while the cursor is actually on this layer's screen,
-// positioned just down-and-right of the cursor tip (matching the demos).
+// The cursor-trailing companion, rendered only while the cursor is actually on this layer's
+// screen, positioned just down-and-right of the cursor tip (matching the demos). While an active
+// state runs it shows the full state glyph (waveform / arc / triangle); while IDLE it shows the
+// wisp itself — a small breathing point of light — so the companion is always visibly there.
+// "Where is Wisp?" should never be a question the user has to ask.
 private struct CursorGlyphLayer: View {
     @ObservedObject var appCoordinator: AppCoordinator
     let screenFrame: NSRect
@@ -309,17 +312,52 @@ private struct CursorGlyphLayer: View {
     private let cursorGlyphOffset = CGSize(width: 14, height: 16)
 
     var body: some View {
-        if let cursorGlyphState = appCoordinator.currentCursorGlyphState,
-           let cursorPositionOnThisScreen = cursorPositionInScreenSpace(
-               globalPoint: appCoordinator.cursorGlobalBottomLeftPoint,
-               screenFrame: screenFrame
-           ) {
-            CursorGlyphView(glyphState: cursorGlyphState, glyphColor: appCoordinator.cursorGlyphColor)
-                .position(
-                    x: cursorPositionOnThisScreen.x + cursorGlyphOffset.width,
-                    y: cursorPositionOnThisScreen.y + cursorGlyphOffset.height
-                )
+        if let cursorPositionOnThisScreen = cursorPositionInScreenSpace(
+            globalPoint: appCoordinator.cursorGlobalBottomLeftPoint,
+            screenFrame: screenFrame
+        ) {
+            Group {
+                if let cursorGlyphState = appCoordinator.currentCursorGlyphState {
+                    CursorGlyphView(glyphState: cursorGlyphState, glyphColor: appCoordinator.cursorGlyphColor)
+                } else {
+                    IdleWispDot(dotColor: appCoordinator.cursorGlyphColor)
+                }
+            }
+            .position(
+                x: cursorPositionOnThisScreen.x + cursorGlyphOffset.width,
+                y: cursorPositionOnThisScreen.y + cursorGlyphOffset.height
+            )
         }
+    }
+}
+
+// The idle wisp: a ~7pt point of light with a soft glow that gently "breathes". Subtle enough to
+// never distract, present enough that you always know Wisp is with you. Reduce Motion holds it
+// steady instead of breathing.
+private struct IdleWispDot: View {
+    let dotColor: Color
+
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @State private var isBreathingIn = false
+
+    var body: some View {
+        Circle()
+            .fill(dotColor)
+            .frame(width: 7, height: 7)
+            // Two soft shadows in the dot's own color read as a glow, not a drop shadow.
+            .shadow(color: dotColor.opacity(0.85), radius: 3)
+            .shadow(color: dotColor.opacity(0.45), radius: 7)
+            .opacity(isBreathingIn ? 1.0 : 0.55)
+            .scaleEffect(isBreathingIn ? 1.0 : 0.85)
+            .onAppear {
+                guard !accessibilityReduceMotion else {
+                    isBreathingIn = true
+                    return
+                }
+                withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+                    isBreathingIn = true
+                }
+            }
     }
 }
 
