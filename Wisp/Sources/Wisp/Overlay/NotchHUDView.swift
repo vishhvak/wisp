@@ -162,7 +162,7 @@ struct NotchHUDView: View {
     private var leadingEarContent: some View {
         Group {
             if let cursorGlyphState = appCoordinator.currentCursorGlyphState {
-                CursorGlyphView(glyphState: cursorGlyphState, glyphColor: appCoordinator.cursorGlyphColor)
+                CursorGlyphView(glyphState: cursorGlyphState, glyphColor: appCoordinator.cursorGlyphColor, glyphDimension: 14)
             } else {
                 Circle()
                     .fill(appCoordinator.cursorGlyphColor)

@@ -2,135 +2,173 @@ import SwiftUI
 
 // The three visual states the cursor-trailing glyph can render. This is intentionally a smaller
 // enum than the full CompanionState, because only these three states produce a glyph: while idle
-// or running a background agent there is nothing riding next to the cursor.
+// the layer shows the plain wisp dot, and agent work is surfaced by cards, not the cursor.
 enum CursorGlyphState: Equatable {
-    // Animated vertical waveform bars — the user is speaking / Wisp is listening.
     case listening
-    // A spinning arc — Wisp is thinking / processing the request.
     case processing
-    // A solid right-pointing triangle — Wisp is speaking (TTS playing).
     case responding
 }
 
-// A ~12pt glyph that rides just to the right of the OS cursor and communicates Wisp's live
-// state. This is THE primary ambient feedback surface in the shipped design language — not a big
-// HUD. The glyph color is configurable (blue by default) and all motion respects Reduce Motion.
+// The cursor companion's state glyphs, designed as ONE light language so every state is visibly
+// the same little wisp doing something different (the idle dot never "disappears", it changes
+// behavior):
+//
+//   • LISTENING  — a ring of light repeatedly CONTRACTS into the dot: the wisp drawing your words
+//     in. (Replaces the generic equalizer bars.)
+//   • PROCESSING — a small spark ORBITS the dot: a thought circling.
+//   • RESPONDING — ripples RADIATE outward from the dot: the wisp speaking. (Replaces the static
+//     triangle, which read as a dead play button.)
+//
+// All motion is calm and small (~20pt), glow comes from color-matched shadows, and Reduce Motion
+// swaps each animation for a distinct static form so state stays readable.
 struct CursorGlyphView: View {
     let glyphState: CursorGlyphState
     let glyphColor: Color
+    // The glyph canvas size. Default suits the cursor overlay; the notch ear passes a smaller one.
+    var glyphDimension: CGFloat = 20
 
-    // When the user has enabled Reduce Motion we render the same shapes but hold them still, so the
-    // state is still readable without any looping animation.
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
-    // The nominal glyph size. ~12pt matches the tiny cursor-adjacent element seen in the demos.
-    private let glyphDimension: CGFloat = 12
-
     var body: some View {
-        Group {
+        ZStack {
+            // The wisp itself — the constant core across idle and every state.
+            WispCoreDot(dotColor: glyphColor, coreDiameter: glyphDimension * 0.34)
+
             switch glyphState {
             case .listening:
-                WaveformBarsGlyph(barColor: glyphColor, isAnimating: !accessibilityReduceMotion)
+                ContractingRingGlyph(
+                    ringColor: glyphColor,
+                    canvasDimension: glyphDimension,
+                    isAnimating: !accessibilityReduceMotion
+                )
             case .processing:
-                SpinningArcGlyph(arcColor: glyphColor, isAnimating: !accessibilityReduceMotion)
+                OrbitingSparkGlyph(
+                    sparkColor: glyphColor,
+                    canvasDimension: glyphDimension,
+                    isAnimating: !accessibilityReduceMotion
+                )
             case .responding:
-                RightPointingTriangleGlyph(triangleColor: glyphColor)
+                RadiatingRipplesGlyph(
+                    rippleColor: glyphColor,
+                    canvasDimension: glyphDimension,
+                    isAnimating: !accessibilityReduceMotion
+                )
             }
         }
         .frame(width: glyphDimension, height: glyphDimension)
     }
 }
 
-// MARK: - Listening: animated waveform bars
+// MARK: - The core dot (shared)
 
-// Four short vertical bars whose heights animate up and down to read as an audio level meter.
-private struct WaveformBarsGlyph: View {
-    let barColor: Color
-    let isAnimating: Bool
-
-    // Drives the per-bar height oscillation. Advancing this phase re-computes each bar's scale.
-    @State private var animationPhase: CGFloat = 0
-
-    // Fixed base height fractions so the four bars have a pleasant, non-uniform resting shape.
-    private let baseHeightFractions: [CGFloat] = [0.5, 0.9, 0.65, 0.4]
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 1.5) {
-            ForEach(0..<baseHeightFractions.count, id: \.self) { barIndex in
-                Capsule(style: .continuous)
-                    .fill(barColor)
-                    .frame(width: 2, height: heightForBar(atIndex: barIndex))
-            }
-        }
-        .onAppear {
-            guard isAnimating else { return }
-            // A repeating linear animation continuously advances the phase so the bars ripple.
-            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
-                animationPhase = 1
-            }
-        }
-    }
-
-    // Computes an animated height for a bar by offsetting a sine wave per bar index, so the bars
-    // don't all pulse in unison. When not animating, the base resting height is used.
-    private func heightForBar(atIndex barIndex: Int) -> CGFloat {
-        let maximumBarHeight: CGFloat = 12
-        let baseFraction = baseHeightFractions[barIndex]
-        guard isAnimating else {
-            return maximumBarHeight * baseFraction
-        }
-        let perBarPhaseOffset = CGFloat(barIndex) * 0.7
-        let oscillation = (sin((animationPhase * .pi * 2) + perBarPhaseOffset) + 1) / 2
-        // Blend the base resting fraction with the live oscillation so bars never fully collapse.
-        let blendedFraction = (baseFraction * 0.4) + (oscillation * 0.6)
-        return maximumBarHeight * max(0.2, blendedFraction)
-    }
-}
-
-// MARK: - Processing: spinning arc
-
-// A three-quarter circular arc that continuously rotates, reading as a lightweight loading spinner.
-private struct SpinningArcGlyph: View {
-    let arcColor: Color
-    let isAnimating: Bool
-
-    @State private var currentRotationDegrees: Double = 0
+// The glowing point of light at the center of every state. Slightly smaller than the idle dot so
+// the surrounding state motion reads as the emphasis.
+private struct WispCoreDot: View {
+    let dotColor: Color
+    let coreDiameter: CGFloat
 
     var body: some View {
         Circle()
-            // Trim to 75% of the circle so there's a visible gap that makes rotation legible.
-            .trim(from: 0, to: 0.75)
-            .stroke(arcColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            .rotationEffect(.degrees(currentRotationDegrees))
+            .fill(dotColor)
+            .frame(width: coreDiameter, height: coreDiameter)
+            .shadow(color: dotColor.opacity(0.85), radius: 3)
+            .shadow(color: dotColor.opacity(0.4), radius: 6)
+    }
+}
+
+// MARK: - Listening: a ring contracting into the dot
+
+private struct ContractingRingGlyph: View {
+    let ringColor: Color
+    let canvasDimension: CGFloat
+    let isAnimating: Bool
+
+    // 0 → full size, 1 → contracted onto the dot; runs 0 → 1 and restarts (no autoreverse), so the
+    // ring always falls INWARD — light being drawn in.
+    @State private var contractionProgress: CGFloat = 0
+
+    var body: some View {
+        Circle()
+            .stroke(ringColor.opacity(0.25 + 0.55 * contractionProgress), lineWidth: 1.5)
+            .frame(width: canvasDimension, height: canvasDimension)
+            .scaleEffect(isAnimating ? (1.0 - 0.62 * contractionProgress) : 1.0)
             .onAppear {
                 guard isAnimating else { return }
-                withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
-                    currentRotationDegrees = 360
+                withAnimation(.easeIn(duration: 1.0).repeatForever(autoreverses: false)) {
+                    contractionProgress = 1
                 }
             }
     }
 }
 
-// MARK: - Responding: solid right-pointing triangle
+// MARK: - Processing: a spark orbiting the dot
 
-// A filled right-pointing triangle (a "play"-like glyph) shown while TTS audio is playing.
-private struct RightPointingTriangleGlyph: View {
-    let triangleColor: Color
+private struct OrbitingSparkGlyph: View {
+    let sparkColor: Color
+    let canvasDimension: CGFloat
+    let isAnimating: Bool
+
+    @State private var orbitAngleDegrees: Double = 0
 
     var body: some View {
-        RightTriangleShape()
-            .fill(triangleColor)
+        // The spark sits at the top of its orbit; rotating the container carries it around the dot.
+        Circle()
+            .fill(sparkColor)
+            .frame(width: canvasDimension * 0.18, height: canvasDimension * 0.18)
+            .shadow(color: sparkColor.opacity(0.8), radius: 2)
+            .offset(y: -canvasDimension * 0.38)
+            .rotationEffect(.degrees(isAnimating ? orbitAngleDegrees : 45))
+            .onAppear {
+                guard isAnimating else { return }
+                withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) {
+                    orbitAngleDegrees = 360
+                }
+            }
     }
 }
 
-// The triangle geometry: apex on the right edge, flat back on the left edge.
-private struct RightTriangleShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var trianglePath = Path()
-        trianglePath.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        trianglePath.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
-        trianglePath.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        trianglePath.closeSubpath()
-        return trianglePath
+// MARK: - Responding: ripples radiating from the dot
+
+private struct RadiatingRipplesGlyph: View {
+    let rippleColor: Color
+    let canvasDimension: CGFloat
+    let isAnimating: Bool
+
+    var body: some View {
+        if isAnimating {
+            ZStack {
+                // Two ripples, half a cycle apart, so one is always mid-flight.
+                SingleRadiatingRipple(rippleColor: rippleColor, canvasDimension: canvasDimension, startDelay: 0)
+                SingleRadiatingRipple(rippleColor: rippleColor, canvasDimension: canvasDimension, startDelay: 0.55)
+            }
+        } else {
+            // Reduce Motion: two static concentric rings still read as "emitting".
+            ZStack {
+                Circle().stroke(rippleColor.opacity(0.55), lineWidth: 1.5)
+                    .frame(width: canvasDimension * 0.6, height: canvasDimension * 0.6)
+                Circle().stroke(rippleColor.opacity(0.3), lineWidth: 1.5)
+                    .frame(width: canvasDimension, height: canvasDimension)
+            }
+        }
+    }
+}
+
+private struct SingleRadiatingRipple: View {
+    let rippleColor: Color
+    let canvasDimension: CGFloat
+    let startDelay: Double
+
+    @State private var expansionProgress: CGFloat = 0
+
+    var body: some View {
+        Circle()
+            .stroke(rippleColor.opacity(Double(1 - expansionProgress) * 0.7), lineWidth: 1.5)
+            .frame(width: canvasDimension, height: canvasDimension)
+            .scaleEffect(0.3 + 0.8 * expansionProgress)
+            .onAppear {
+                withAnimation(.easeOut(duration: 1.1).repeatForever(autoreverses: false).delay(startDelay)) {
+                    expansionProgress = 1
+                }
+            }
     }
 }

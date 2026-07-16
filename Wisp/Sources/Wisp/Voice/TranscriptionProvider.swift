@@ -19,122 +19,169 @@ protocol TranscriptionProvider: AnyObject {
     func stopTranscribing()
 }
 
-// MARK: - Parakeet Python sidecar provider
+// MARK: - Parakeet warm daemon engine
 
-// Runs the Parakeet TDT 0.6B v3 speech-to-text model via a Python sidecar process. The sidecar
-// (voice-sidecar/parakeet_stt.py) captures the microphone locally on Apple Silicon and prints JSON
-// lines — {"partial": "..."} while speaking and {"final": "..."} at end of utterance — which we
-// parse and forward. WHY a sidecar: Parakeet runs through parakeet-mlx (Python), so the cleanest
-// integration from Swift is to launch it as a child process and stream its stdout. If Python, the
-// package, or the model is missing the sidecar exits with an error and the caller falls back to
-// AppleSpeechProvider.
-final class ParakeetSidecarProvider: TranscriptionProvider {
+// Runs the Parakeet TDT 0.6B v3 model via a LONG-LIVED Python daemon (voice-sidecar/parakeet_stt.py),
+// spawned once at app startup. The model loads exactly once — at launch — and each push-to-talk
+// hold is then just a {"cmd":"start"} / {"cmd":"stop"} exchange over stdin, so the mic is hot
+// ~0.1s after the press. (The first architecture launched a fresh process per hold and paid a
+// model load inside every hold; users talked into a dead mic. Never again.)
+final class ParakeetWarmEngine: TranscriptionProvider {
     private let sidecarScriptPath: String
+
     private var sidecarProcess: Process?
+    private var sidecarStandardInput: Pipe?
 
-    // A handle we can check to decide whether to fall back before even starting.
-    private(set) var didFailToLaunch = false
+    // Guards the mutable session state below — stdout parsing runs on a pipe-callback thread while
+    // start/stop arrive from the main actor.
+    private let stateLock = NSLock()
+    private var activeSessionContinuation: AsyncStream<TranscriptUpdate>.Continuation?
+    private(set) var isModelReady = false
+    private var respawnAttemptCount = 0
+    private static let maximumRespawnAttempts = 3
 
-    init(sidecarScriptPath: String = WispConfig.parakeetSidecarScriptPath) {
-        self.sidecarScriptPath = sidecarScriptPath
-    }
-
-    // Whether the sidecar can plausibly run at all: its script exists and a python3 is on PATH.
-    // Checked BEFORE choosing this provider — a launch-failure flag set after the fact is useless
-    // for provider selection (that bug shipped once; hence this).
+    // Whether the daemon can plausibly run at all: its script exists and a python3 is available
+    // (preferring the sidecar's venv). Checked before choosing this engine.
     static func isSidecarRunnable(sidecarScriptPath: String = WispConfig.parakeetSidecarScriptPath) -> Bool {
         guard FileManager.default.fileExists(atPath: sidecarScriptPath) else { return false }
+        if WispConfig.sidecarPythonExecutablePath != "python3" { return true }
         let pathEnvironment = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"
         return pathEnvironment
             .split(separator: ":")
             .contains { FileManager.default.isExecutableFile(atPath: "\($0)/python3") }
     }
 
+    init(sidecarScriptPath: String = WispConfig.parakeetSidecarScriptPath) {
+        self.sidecarScriptPath = sidecarScriptPath
+    }
+
+    // MARK: Engine lifecycle (once per app run)
+
+    // Spawns the daemon and starts the model load. Call once at app startup, BEFORE any session —
+    // by the time the user first presses the hotkey the model is warm.
+    func startEngine() {
+        spawnSidecarDaemon()
+    }
+
+    // Clean shutdown at app quit.
+    func shutdownEngine() {
+        sendCommand("quit")
+        let processToReap = sidecarProcess
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+            if let processToReap, processToReap.isRunning {
+                processToReap.terminate()
+            }
+        }
+        sidecarProcess = nil
+    }
+
+    private func spawnSidecarDaemon() {
+        let daemonProcess = Process()
+        daemonProcess.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        daemonProcess.arguments = [WispConfig.sidecarPythonExecutablePath, sidecarScriptPath]
+
+        let standardInputPipe = Pipe()
+        let standardOutputPipe = Pipe()
+        let standardErrorPipe = Pipe()
+        daemonProcess.standardInput = standardInputPipe
+        daemonProcess.standardOutput = standardOutputPipe
+        daemonProcess.standardError = standardErrorPipe
+
+        standardOutputPipe.fileHandleForReading.readabilityHandler = { [weak self] fileHandle in
+            let availableData = fileHandle.availableData
+            guard !availableData.isEmpty,
+                  let outputChunk = String(data: availableData, encoding: .utf8) else {
+                return
+            }
+            for jsonLine in outputChunk.split(separator: "\n") {
+                self?.handleSidecarLine(String(jsonLine))
+            }
+        }
+
+        // Mirror stderr into the log — model downloads, tracebacks, audio-device complaints.
+        standardErrorPipe.fileHandleForReading.readabilityHandler = { fileHandle in
+            let availableData = fileHandle.availableData
+            guard !availableData.isEmpty,
+                  let errorChunk = String(data: availableData, encoding: .utf8) else {
+                return
+            }
+            for errorLine in errorChunk.split(separator: "\n") where !errorLine.trimmingCharacters(in: .whitespaces).isEmpty {
+                WispLog.log("sidecar", String(errorLine.prefix(300)))
+            }
+        }
+
+        daemonProcess.terminationHandler = { [weak self] endedProcess in
+            guard let self else { return }
+            WispLog.log("voice", "parakeet daemon exited (status \(endedProcess.terminationStatus))")
+            self.stateLock.lock()
+            self.isModelReady = false
+            let orphanedContinuation = self.activeSessionContinuation
+            self.activeSessionContinuation = nil
+            let shouldRespawn = self.respawnAttemptCount < Self.maximumRespawnAttempts
+            if shouldRespawn { self.respawnAttemptCount += 1 }
+            self.stateLock.unlock()
+
+            orphanedContinuation?.finish()
+            if shouldRespawn {
+                WispLog.log("voice", "respawning parakeet daemon (attempt \(self.respawnAttemptCount)/\(Self.maximumRespawnAttempts))")
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                    self?.spawnSidecarDaemon()
+                }
+            } else {
+                WispLog.log("voice", "parakeet daemon gave up after \(Self.maximumRespawnAttempts) respawns — sessions will fall back to Apple Speech")
+            }
+        }
+
+        do {
+            try daemonProcess.run()
+            sidecarProcess = daemonProcess
+            sidecarStandardInput = standardInputPipe
+            WispLog.log("voice", "parakeet daemon spawned — loading model (once)…")
+        } catch {
+            WispLog.log("voice", "parakeet daemon failed to launch: \(error.localizedDescription)")
+            sidecarProcess = nil
+            sidecarStandardInput = nil
+        }
+    }
+
+    // MARK: TranscriptionProvider (per push-to-talk session)
+
     func startTranscribing() -> AsyncStream<TranscriptUpdate> {
         AsyncStream { continuation in
-            let launchedProcess = Process()
-            // Prefer the sidecar's own venv python (which has parakeet-mlx); `python3` otherwise.
-            launchedProcess.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            launchedProcess.arguments = [WispConfig.sidecarPythonExecutablePath, sidecarScriptPath]
+            stateLock.lock()
+            activeSessionContinuation = continuation
+            let engineIsAlive = sidecarProcess?.isRunning ?? false
+            let modelWasReadyAtStart = isModelReady
+            stateLock.unlock()
 
-            let standardOutputPipe = Pipe()
-            let standardErrorPipe = Pipe()
-            launchedProcess.standardOutput = standardOutputPipe
-            launchedProcess.standardError = standardErrorPipe
-
-            // Parse each newline-delimited JSON object emitted on stdout into a TranscriptUpdate.
-            standardOutputPipe.fileHandleForReading.readabilityHandler = { fileHandle in
-                let availableData = fileHandle.availableData
-                guard !availableData.isEmpty,
-                      let outputChunk = String(data: availableData, encoding: .utf8) else {
-                    return
-                }
-                for jsonLine in outputChunk.split(separator: "\n") {
-                    Self.parseSidecarLine(String(jsonLine), into: continuation)
-                }
-            }
-
-            // Mirror the sidecar's stderr into the log — this is where model downloads, python
-            // tracebacks, and audio-device complaints surface. Without it, a sidecar stuck
-            // downloading 600MB looks identical to one that's working silently.
-            standardErrorPipe.fileHandleForReading.readabilityHandler = { fileHandle in
-                let availableData = fileHandle.availableData
-                guard !availableData.isEmpty,
-                      let errorChunk = String(data: availableData, encoding: .utf8) else {
-                    return
-                }
-                for errorLine in errorChunk.split(separator: "\n") where !errorLine.trimmingCharacters(in: .whitespaces).isEmpty {
-                    WispLog.log("sidecar", String(errorLine.prefix(300)))
-                }
-            }
-
-            do {
-                try launchedProcess.run()
-                self.sidecarProcess = launchedProcess
-            } catch {
-                // The sidecar couldn't even be launched (e.g. python3 not found). Signal failure so
-                // the caller can fall back to Apple Speech.
-                self.didFailToLaunch = true
+            guard engineIsAlive else {
+                WispLog.log("voice", "parakeet daemon not running — session cannot start")
                 continuation.finish()
                 return
             }
-
-            // When the process exits, close out the stream.
-            launchedProcess.terminationHandler = { _ in
-                continuation.finish()
+            if !modelWasReadyAtStart {
+                // Command is queued in the pipe; the daemon opens the mic as soon as the model
+                // finishes loading. Only possible in the first seconds after app launch.
+                WispLog.log("voice", "session started before model ready — daemon will open mic once warm")
             }
-
-            // If the stream is torn down (task cancelled), make sure we kill the child process.
-            continuation.onTermination = { [weak self] _ in
-                self?.terminateSidecarProcessIfRunning()
-            }
+            sendCommand("start")
         }
     }
 
     func stopTranscribing() {
-        terminateSidecarProcessIfRunning()
+        sendCommand("stop")
+        // The daemon replies: (optional) {"final": …} then {"status": "stopped"} — the stopped
+        // status finishes the session stream, so the final always drains first. No process kill.
     }
 
-    private func terminateSidecarProcessIfRunning() {
-        guard let sidecarProcess, sidecarProcess.isRunning else { return }
-        // SIGTERM asks the sidecar to finalize the utterance and emit it before exiting (the
-        // push-to-talk contract). If it wedges instead, escalate to SIGKILL so a stuck child can
-        // never block the next listening session.
-        sidecarProcess.terminate()
-        self.sidecarProcess = nil
-        // 4s: a release during model load must let the load finish + the finalize transcribe run
-        // before we give up on the goodbye transcript.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 4.0) {
-            if sidecarProcess.isRunning {
-                WispLog.log("voice", "sidecar ignored SIGTERM for 4s — sending SIGKILL")
-                kill(sidecarProcess.processIdentifier, SIGKILL)
-            }
-        }
+    private func sendCommand(_ commandName: String) {
+        guard let commandData = "{\"cmd\": \"\(commandName)\"}\n".data(using: .utf8) else { return }
+        sidecarStandardInput?.fileHandleForWriting.write(commandData)
     }
 
-    // Parses one line of sidecar stdout. Recognized shapes: {"partial": "..."}, {"final": "..."},
-    // and {"error": "..."} (which we surface as a final empty result so the caller can fall back).
-    private static func parseSidecarLine(_ jsonLine: String, into continuation: AsyncStream<TranscriptUpdate>.Continuation) {
+    // MARK: stdout protocol
+
+    private func handleSidecarLine(_ jsonLine: String) {
         let trimmedLine = jsonLine.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedLine.isEmpty,
               let lineData = trimmedLine.data(using: .utf8),
@@ -143,25 +190,43 @@ final class ParakeetSidecarProvider: TranscriptionProvider {
         }
 
         if let partialText = decodedObject["partial"] as? String {
-            continuation.yield(.partial(partialText))
+            currentContinuation()?.yield(.partial(partialText))
         } else if let finalText = decodedObject["final"] as? String {
-            continuation.yield(.final(finalText))
+            currentContinuation()?.yield(.final(finalText))
         } else if let statusText = decodedObject["status"] as? String {
-            // "listening" = mic open (everything before this was model load); "stopped" = clean exit.
-            WispLog.log("voice", "parakeet sidecar status: \(statusText)")
+            WispLog.log("voice", "parakeet daemon status: \(statusText)")
+            switch statusText {
+            case "ready":
+                stateLock.lock()
+                isModelReady = true
+                respawnAttemptCount = 0
+                stateLock.unlock()
+            case "stopped":
+                stateLock.lock()
+                let finishedContinuation = activeSessionContinuation
+                activeSessionContinuation = nil
+                stateLock.unlock()
+                finishedContinuation?.finish()
+            default:
+                break
+            }
         } else if let errorText = decodedObject["error"] as? String {
-            // Surface sidecar-reported problems (e.g. "parakeet-mlx not installed") in the log so a
-            // silent no-transcript session is diagnosable.
-            WispLog.log("voice", "parakeet sidecar error: \(errorText)")
+            WispLog.log("voice", "parakeet daemon error: \(errorText)")
         }
+    }
+
+    private func currentContinuation() -> AsyncStream<TranscriptUpdate>.Continuation? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return activeSessionContinuation
     }
 }
 
 // MARK: - Apple Speech fallback provider
 
 // A local, on-device fallback that uses Apple's Speech framework (SFSpeechRecognizer) driven by an
-// AVAudioEngine microphone tap. Used automatically when the Parakeet sidecar is unavailable. This
-// needs Microphone + Speech Recognition permissions; the caller is responsible for requesting them.
+// AVAudioEngine microphone tap. Used automatically when the Parakeet daemon is unavailable. This
+// needs Microphone + Speech Recognition permissions.
 final class AppleSpeechProvider: TranscriptionProvider {
     private let speechRecognizer = SFSpeechRecognizer()
     private let audioEngine = AVAudioEngine()

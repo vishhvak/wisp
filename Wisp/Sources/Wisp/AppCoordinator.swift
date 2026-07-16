@@ -409,6 +409,10 @@ final class VoiceEngine {
     private let hotkeyMonitor = HotkeyMonitor()
     private let textToSpeechPlayer = TTSPlayer()
 
+    // The warm Parakeet daemon — spawned once at app start so the model loads exactly once, at
+    // launch, and every push-to-talk session starts with a hot engine. nil when not runnable.
+    private var parakeetWarmEngine: ParakeetWarmEngine?
+
     // The active transcription provider for the current listening session (nil when not listening).
     private var activeTranscriptionProvider: TranscriptionProvider?
     private var activeListeningTask: Task<Void, Never>?
@@ -422,17 +426,28 @@ final class VoiceEngine {
         self.appCoordinator = appCoordinator
     }
 
-    // Begins monitoring hotkeys and wires each gesture to the appropriate behavior.
+    // Begins monitoring hotkeys, and warms the Parakeet daemon so the model is loaded before the
+    // user's first press.
     func start() {
         hotkeyMonitor.onHotkeyEvent = { [weak self] hotkeyEvent in
             self?.handleHotkeyEvent(hotkeyEvent)
         }
         hotkeyMonitor.start()
+
+        if ParakeetWarmEngine.isSidecarRunnable() {
+            let warmEngine = ParakeetWarmEngine()
+            warmEngine.startEngine()
+            parakeetWarmEngine = warmEngine
+        } else {
+            WispLog.log("voice", "Parakeet sidecar not runnable (script/python3 missing) — sessions will use Apple Speech")
+        }
     }
 
     func stop() {
         hotkeyMonitor.stop()
         endListeningSession()
+        parakeetWarmEngine?.shutdownEngine()
+        parakeetWarmEngine = nil
     }
 
     // Speaks text via the Worker-proxied TTS, returning once playback starts.
@@ -528,14 +543,13 @@ final class VoiceEngine {
         activeTranscriptionProvider = nil
     }
 
-    // Chooses a transcription provider: the local Parakeet sidecar when its script + python3 are
-    // actually present, otherwise Apple Speech. (An earlier version consulted a flag the sidecar
-    // only sets AFTER a failed launch, so the fallback never engaged — check upfront instead.)
+    // Chooses a transcription provider: the warm Parakeet daemon when it's alive, otherwise Apple
+    // Speech. The daemon is shared across sessions — never constructed per hold.
     private func resolveTranscriptionProvider() -> TranscriptionProvider {
-        if ParakeetSidecarProvider.isSidecarRunnable() {
-            return ParakeetSidecarProvider()
+        if let parakeetWarmEngine {
+            return parakeetWarmEngine
         }
-        WispLog.log("voice", "Parakeet sidecar not runnable (script/python3 missing) — using Apple Speech")
+        WispLog.log("voice", "no warm Parakeet engine — using Apple Speech")
         return AppleSpeechProvider()
     }
 }
