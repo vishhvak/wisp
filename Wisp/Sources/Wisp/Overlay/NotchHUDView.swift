@@ -51,10 +51,11 @@ struct NotchHUDView: View {
         return .hidden
     }
 
-    // iOS's island uses a snappy-but-composed spring; this matches that feel. Reduce Motion swaps
-    // the morph for an instant change (content still communicates state).
+    // The island's geometry morph — the design system's one sanctioned 500ms move (DESIGN.md §4),
+    // researched from real island shape-morph implementations (bounce 0.16 over 0.5s, one spring
+    // for width/height/radius together). Reduce Motion swaps the morph for an instant change.
     private var islandSpring: Animation? {
-        accessibilityReduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.72)
+        accessibilityReduceMotion ? nil : DS.Motion.islandMorph
     }
 
     // Pure black is load-bearing: it's what makes the island visually continuous with the cutout.
@@ -256,11 +257,13 @@ struct NotchHUDView: View {
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(Color.black.opacity(0.8))
+                        .foregroundColor(DS.Colors.onAccent)
                         .frame(width: 26, height: 26)
                         .background(Circle().fill(DS.Colors.amber))
+                        // 26pt visual button, ~40pt hit target (desktop floor).
+                        .contentShape(Circle().inset(by: -7))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableButtonStyle())
                 .pointerCursorOnHover()
             }
         }

@@ -35,7 +35,8 @@ struct CompletionToastView: View {
                         .fill(DS.Colors.toastBlue)
                 )
         }
-        .shadow(color: Color.black.opacity(0.25), radius: 12, x: 0, y: 4)
+        // The system's one calibrated surface shadow (DESIGN.md §3).
+        .shadow(color: Color.black.opacity(0.35), radius: 9, x: 0, y: 3)
         .task {
             // Schedule the auto-dismiss. Using an async sleep keeps this cancellable if the toast
             // view is removed early (SwiftUI cancels the `.task` when the view disappears).

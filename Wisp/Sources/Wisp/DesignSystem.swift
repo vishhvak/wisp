@@ -34,17 +34,27 @@ enum DS {
         static let secondaryText = Color.white.opacity(0.62)
         // Dim, small-caps section-label color ("SUGGESTED NEXT", "FOLLOW UP").
         static let sectionLabel = Color.white.opacity(0.42)
-        // The dark-gray fill used by the capsule action pills inside a card.
+        // The dark-gray fill used by the capsule action pills inside a card, and its hover state.
         static let pillFill = Color.white.opacity(0.10)
+        static let pillFillHover = Color.white.opacity(0.16)
+        // The 1px inner stroke on dark surfaces — the ONE sanctioned border in the system.
+        static let hairline = Color.white.opacity(0.08)
+        // Glyph/text color on saturated accent fills (amber send button, green/blue status pills).
+        // White fails contrast on these mid-lightness accents; near-black passes.
+        static let onAccent = Color.black.opacity(0.8)
     }
 
     // MARK: - Corner Radius
-    // Named radii keep every rounded surface visually consistent.
+    // Named radii keep every rounded surface visually consistent. Concentric rule everywhere:
+    // outerRadius = innerRadius + gap. Nothing rectangular exceeds 24.
     enum CornerRadius {
         static let pill: CGFloat = 999          // fully-rounded capsule pills
         static let card: CGFloat = 18           // the top-right task card
         static let toast: CGFloat = 14          // the completion toast bubble
+        static let field: CGFloat = 10          // composer input / drop-zone dashed rect
         static let chip: CGFloat = 6            // white-on-red teaching chip labels
+        static let islandCompact: CGFloat = 13  // island bottom corners, compact presentation
+        static let islandExpanded: CGFloat = 22 // island bottom corners, expanded/composer
     }
 
     // MARK: - Spacing
@@ -55,6 +65,46 @@ enum DS {
         static let medium: CGFloat = 12
         static let large: CGFloat = 16
         static let extraLarge: CGFloat = 24
+    }
+
+    // MARK: - Motion
+    // The motion vocabulary from DESIGN.md §4. State-conveying only; 150–250ms interactions; the
+    // island's 500ms shape morph is the single deliberate exception. Exits are always faster and
+    // softer than enters. Values derived from the researched motion corpus (see research notes).
+    enum Motion {
+        // Anything leaving the screen (toasts, swapped content out).
+        static let exitFast = Animation.easeIn(duration: 0.15)
+        // Standard state/feedback enters.
+        static let enter = Animation.easeOut(duration: 0.20)
+        // Content crossfading INSIDE a morphing container (incoming delayed 0.08s behind outgoing).
+        static let swap = Animation.easeInOut(duration: 0.24)
+        static let swapIncomingDelaySeconds: Double = 0.08
+        // Island geometry morphs — width/height/radius together on ONE spring, content separate.
+        static let islandMorph = Animation.spring(duration: 0.5, bounce: 0.16)
+        // Short snappy movement: pill layout shifts, magnet-style follows.
+        static let snappy = Animation.spring(response: 0.30, dampingFraction: 0.9)
+        // Press feedback pair: quick down to 0.96, springy release back to 1.0.
+        static let pressDown = Animation.easeOut(duration: 0.10)
+        static let pressUp = Animation.spring(response: 0.30, dampingFraction: 0.65)
+        // Invalid-input shake: offset 6pt then spring to 0 on a loose, fast spring.
+        static let shake = Animation.spring(response: 0.24, dampingFraction: 0.17)
+        // The idle dot's luminosity cycle.
+        static let breathe = Animation.easeInOut(duration: 1.6).repeatForever(autoreverses: true)
+        // The agent pointer's bezier flight.
+        static let glide = Animation.easeInOut(duration: 0.55)
+    }
+}
+
+// MARK: - Press feedback
+
+// The system-wide press feedback for pills and buttons: scale to exactly 0.96 while pressed
+// (never deeper — below 0.95 reads as exaggerated), quick ease down, springy release. Applied as
+// a ButtonStyle so every interactive capsule shares identical tactile behavior.
+struct PressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(configuration.isPressed ? DS.Motion.pressDown : DS.Motion.pressUp, value: configuration.isPressed)
     }
 }
 

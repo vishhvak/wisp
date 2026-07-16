@@ -115,7 +115,7 @@ struct AgentPointerView: View {
         // Restart the animatable progress from the departure end of the new curve, then animate to
         // the destination. The completion fires the ripple + arms the idle-hide.
         flightProgress = 0
-        withAnimation(.easeInOut(duration: Self.flightDurationSeconds)) {
+        withAnimation(DS.Motion.glide) {
             flightProgress = 1
         } completion: {
             handleLanding()

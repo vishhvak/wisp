@@ -43,8 +43,13 @@ struct TaskCardView: View {
             RoundedRectangle(cornerRadius: DS.CornerRadius.card, style: .continuous)
                 .fill(DS.Colors.cardCharcoal)
         )
-        // A soft shadow lifts the card off whatever is behind it on screen.
-        .shadow(color: Color.black.opacity(0.35), radius: 18, x: 0, y: 8)
+        // Elevation per DESIGN.md §3: a hairline inner stroke + ONE calibrated soft shadow —
+        // never the wide-shadow-plus-border pairing.
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.CornerRadius.card, style: .continuous)
+                .strokeBorder(DS.Colors.hairline, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.35), radius: 9, x: 0, y: 3)
     }
 
     // MARK: - Header
@@ -66,11 +71,13 @@ struct TaskCardView: View {
         }
     }
 
-    // The colored status pill (green Done, blue Running, red Error).
+    // The colored status pill (green Done, blue Running, red Error). Mid-lightness green/blue
+    // fills fail contrast with white text (~2.9:1); near-black passes (~7:1). Error red keeps
+    // white — it's dark enough, and red+white is the established alarm pairing.
     private var statusPill: some View {
         Text(agentTask.state.pillLabel)
             .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(.white)
+            .foregroundColor(agentTask.state == .error ? .white : DS.Colors.onAccent)
             .padding(.horizontal, DS.Spacing.small)
             .padding(.vertical, 3)
             .background(
@@ -158,10 +165,17 @@ struct CardActionPill: View {
             .padding(.vertical, DS.Spacing.small)
             .background(
                 Capsule(style: .continuous)
-                    .fill(DS.Colors.pillFill.opacity(isPointerHovering ? 0.20 : 0.10))
+                    // Token fills, not stacked opacities — an earlier version multiplied
+                    // .opacity(0.10) ONTO the already-translucent pillFill, rendering pills at
+                    // ~1% white (invisible).
+                    .fill(isPointerHovering ? DS.Colors.pillFillHover : DS.Colors.pillFill)
             )
+            // Extend the hit area beyond the visible capsule toward the 40pt desktop floor, so
+            // small pills stay easy to hit without inflating the visual design.
+            .contentShape(Capsule(style: .continuous).inset(by: -6))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
+        .animation(DS.Motion.enter, value: isPointerHovering)
         .onHover { isPointerInside in
             isPointerHovering = isPointerInside
         }
