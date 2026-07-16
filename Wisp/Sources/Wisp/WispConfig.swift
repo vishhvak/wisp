@@ -57,6 +57,16 @@ enum WispConfig {
     // per the design spec (Opus reserved for the heavier draw/point tutor path).
     static let defaultClaudeModel = "claude-fable-5"
 
+    // The ChatGPT model used by the direct OAuth transport (ChatGPTCodexClient) — the default LLM.
+    // Luna at low reasoning keeps voice replies snappy; override with WISP_CHAT_MODEL /
+    // WISP_CHAT_EFFORT without recompiling.
+    static var chatModel: String {
+        ProcessInfo.processInfo.environment["WISP_CHAT_MODEL"] ?? "gpt-5.6-luna"
+    }
+    static var chatReasoningEffort: String {
+        ProcessInfo.processInfo.environment["WISP_CHAT_EFFORT"] ?? "low"
+    }
+
     // The user's preferred color for the cursor-trailing glyph. The design spec notes the glyph
     // color is user-configurable (red / blue / yellow / green presets), with blue as the default.
     static var cursorGlyphColor: Color {

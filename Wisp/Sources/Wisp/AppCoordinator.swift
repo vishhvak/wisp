@@ -95,8 +95,10 @@ final class AppCoordinator: ObservableObject {
     // The store of agent tasks. Kept as a small dedicated type so task mutations live in one place.
     let taskCardStore = TaskCardStore()
 
-    // The Claude client used for ask/guide responses.
-    private let claudeClient = ClaudeClient()
+    // The language model used for ask/guide responses: ChatGPT via the user's existing Codex
+    // OAuth session (gpt-5.6-luna, low reasoning) — no API key, no proxy hop. The Claude/Worker
+    // client remains in the tree as an alternative transport.
+    private let languageModelClient = ChatGPTCodexClient()
 
     // The screen-capture utility used to attach screenshots to Claude requests.
     private let screenCapture = ScreenCapture()
@@ -259,7 +261,7 @@ final class AppCoordinator: ObservableObject {
 
         var accumulatedSpokenText = ""
         do {
-            let responseStream = claudeClient.streamResponse(
+            let responseStream = languageModelClient.streamResponse(
                 userMessageText: userRequestText,
                 imageAttachments: imageAttachments
             )
