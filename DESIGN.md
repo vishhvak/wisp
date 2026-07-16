@@ -110,11 +110,22 @@ Cards top out at 18 — nothing rectangular ever exceeds 24 (over-rounding ban).
 - Light-emitting elements (dot, glyphs, spark) use color-matched glow stacks,
   see Color rules. The glow IS the elevation for light elements.
 
-### Materials
+### Materials — the Liquid Glass discipline
 
-No default glassmorphism. Blur is earned in exactly two places: (future)
-island↔glyph gooey blend interiors, and the flap of a drag surface if ever
-needed. Everything else is opaque `surface`.
+Translucency and glow belong to the **floating control layer only** (island,
+pills, buttons, the glyph); **content is always opaque and full-contrast**
+(transcript text, card bodies, workspace panes). The moment frost spreads onto
+content, premium becomes generic glassmorphism. When translucency is used,
+prefer the platform primitive (`NSVisualEffectView` material + vibrancy) over
+hand-rolled blur+opacity. Blur otherwise appears only inside the gooey-blend
+metaball pass (The Drip).
+
+### Naming (spec surfaces by their real names)
+
+Notch HUD = **Panel** (NSPanel, `.nonactivatingPanel`, floating — the
+Spotlight-surface pattern). Status text = **Pill** (capsule, short status —
+never "badge" [counts] or "chip" [removable tokens]). **Toast** = role=status,
+corner-stacked, and its dismiss timer pauses while hovered.
 
 ## 4. Motion
 
@@ -146,9 +157,15 @@ distinct static form (never just "no animation").
    curvature, concave pinch) — no refraction, no glass shader.
 2. **Morph-then-content.** Container geometry animates on `islandMorph`;
    content crossfades on `swap` with incoming delayed 0.08s. Never animate
-   text properties with the geometry spring.
+   text properties with the geometry spring. Inside the ISLAND specifically:
+   content exits in ~80ms flat (no blur, no travel — "sucked into the pill"
+   before the shell morphs) and enters as a soft top-anchored unfurl
+   (opacity + slight scale + small downward settle) — the reference-island
+   asymmetry.
 3. **Enter ≠ exit.** Exits are shorter (0.15s), ease-in, scale toward 0.96 +
-   slight blur; enters are 0.20s ease-out. Never symmetric.
+   slight blur; enters are 0.20s ease-out. Never symmetric — entrances run
+   ~1.4× slower than exits (a rule independently observed across the studied
+   motion systems).
 4. **Press feedback** on every interactive element: scale 0.96 (exactly — no
    deeper), `pressDown`/`pressUp` pair.
 5. **No layout-property animation** where a transform can do it (SwiftUI:
@@ -164,7 +181,11 @@ distinct static form (never just "no animation").
   an unbroken tether: strain without separation.)
 - **Breathe / Contract / Orbit / Radiate**: idle dot breathes (1.6s); a ring
   contracts inward to listen; a spark orbits to think; ripples radiate to
-  speak. One physics: light absorbing, circling, emitting.
+  speak. One physics: light absorbing, circling, emitting. (Planned glow
+  upgrade: true bloom — multi-radius blur composited back — with a subtle
+  warm/cool chromatic split that leans toward the cursor, replacing flat
+  shadow glow. The brand mark's north star: a four-point starburst in a soft
+  radial halo.)
 - **Bezier glide + ring-ripple + idle-hide (1.5s)**: the agent pointer's
   motion contract for teaching.
 - **Accumulating legend**: teaching chips never replace, they stack.

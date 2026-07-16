@@ -62,6 +62,20 @@ struct NotchHUDView: View {
     private let islandBlack = Color.black
     private let hasPhysicalNotch: Bool
 
+    // Island content asymmetry (DESIGN.md §4): content ENTERS as a soft top-anchored unfurl
+    // (delayed behind the outgoing), and EXITS in ~80ms flat so the geometry spring never drags
+    // half-visible text around — the content is gone before the shell morphs.
+    private var islandContentTransition: AnyTransition {
+        .asymmetric(
+            insertion: AnyTransition.opacity
+                .combined(with: .scale(scale: 0.96, anchor: .top))
+                .combined(with: .offset(y: -4))
+                .animation(DS.Motion.swap.delay(DS.Motion.swapIncomingDelaySeconds)),
+            removal: AnyTransition.opacity
+                .animation(DS.Motion.islandContentExit)
+        )
+    }
+
     init(appCoordinator: AppCoordinator, notchWidth: CGFloat, notchHeight: CGFloat) {
         self.appCoordinator = appCoordinator
         self.notchWidth = notchWidth
@@ -135,7 +149,7 @@ struct NotchHUDView: View {
                 leadingEarContent
                     .padding(.leading, 14)
                     .padding(.trailing, 10)
-                    .transition(.opacity)
+                    .transition(islandContentTransition)
             }
 
             // The dead zone spanning the physical notch. Content must never render here — on a
@@ -148,7 +162,7 @@ struct NotchHUDView: View {
                 trailingEarContent
                     .padding(.leading, 10)
                     .padding(.trailing, 14)
-                    .transition(.opacity)
+                    .transition(islandContentTransition)
             }
         }
         .frame(height: earsRowHeight)
@@ -193,7 +207,7 @@ struct NotchHUDView: View {
             .padding(.horizontal, 20)
             .padding(.top, 2)
             .padding(.bottom, 12)
-            .transition(.opacity.combined(with: .move(edge: .top)))
+            .transition(islandContentTransition)
     }
 
     // MARK: - Drop target (drag hovering at the notch)
@@ -219,7 +233,7 @@ struct NotchHUDView: View {
         .padding(.horizontal, 20)
         .padding(.top, 6)
         .padding(.bottom, 16)
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(islandContentTransition)
     }
 
     // MARK: - Composer (files dropped — chips + input + send)
@@ -270,7 +284,7 @@ struct NotchHUDView: View {
         .padding(.horizontal, 20)
         .padding(.top, 4)
         .padding(.bottom, 14)
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(islandContentTransition)
         .onAppear {
             // The panel just became key (controller side); direct focus into the field so the user
             // can type immediately after dropping.

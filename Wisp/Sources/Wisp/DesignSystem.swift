@@ -79,6 +79,9 @@ enum DS {
         // Content crossfading INSIDE a morphing container (incoming delayed 0.08s behind outgoing).
         static let swap = Animation.easeInOut(duration: 0.24)
         static let swapIncomingDelaySeconds: Double = 0.08
+        // Island-content exit: ~80ms flat — content is "sucked into the pill" BEFORE the shell
+        // morphs, so the geometry spring never drags half-visible text around.
+        static let islandContentExit = Animation.linear(duration: 0.08)
         // Island geometry morphs — width/height/radius together on ONE spring, content separate.
         static let islandMorph = Animation.spring(duration: 0.5, bounce: 0.16)
         // Short snappy movement: pill layout shifts, magnet-style follows.
