@@ -66,13 +66,6 @@ def main():
     silence_rms_threshold = 0.010
     silence_blocks_to_finalize = 2
 
-    # Load the model. This can take a few seconds on first run (weights download + init).
-    try:
-        speech_model = from_pretrained("mlx-community/parakeet-tdt-0.6b-v3")
-    except Exception as model_load_error:  # noqa: BLE401 - report any load failure cleanly
-        emit({"error": f"failed to load parakeet model: {model_load_error}"})
-        sys.exit(1)
-
     # A thread-safe queue the audio callback pushes captured blocks into.
     captured_audio_queue: "queue.Queue[np.ndarray]" = queue.Queue()
 
@@ -85,8 +78,13 @@ def main():
     consecutive_silent_blocks = 0
     last_emitted_partial_text = ""
 
+    # The model is loaded AFTER the mic opens (below) so it can't hold the door: None until ready.
+    speech_model = None
+
     def transcribe_samples(sample_array):
         """Runs the model over a mono float32 sample array and returns the recognized text."""
+        if speech_model is None:
+            return ""
         try:
             transcription_result = speech_model.transcribe(sample_array)
             # parakeet-mlx returns an object with a `.text` attribute for the full transcript.
@@ -101,9 +99,19 @@ def main():
         dtype="float32",
         callback=audio_input_callback,
     ):
-        # Tell the parent the mic is actually open — the gap between launch and this line is model
-        # load time, which the Swift log can now show.
+        # ORDER MATTERS: the mic is open and buffering NOW (~0.2s after launch), BEFORE the model
+        # loads. Push-to-talk users start speaking the instant they press — with load-then-listen,
+        # their first words landed on a dead mic (observed live: mic hot 2.1s after press, released
+        # at 1.4s → zero audio). The capture callback buffers into the queue while the model loads,
+        # and the release path transcribes everything buffered since this line.
         emit({"status": "listening"})
+
+        try:
+            speech_model = from_pretrained("mlx-community/parakeet-tdt-0.6b-v3")
+        except Exception as model_load_error:  # noqa: BLE401 - report any load failure cleanly
+            emit({"error": f"failed to load parakeet model: {model_load_error}"})
+            sys.exit(1)
+        emit({"status": "ready"})
 
         while True:
             if shutdown_requested:

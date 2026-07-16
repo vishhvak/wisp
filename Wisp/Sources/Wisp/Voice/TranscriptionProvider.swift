@@ -122,9 +122,11 @@ final class ParakeetSidecarProvider: TranscriptionProvider {
         // never block the next listening session.
         sidecarProcess.terminate()
         self.sidecarProcess = nil
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
+        // 4s: a release during model load must let the load finish + the finalize transcribe run
+        // before we give up on the goodbye transcript.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 4.0) {
             if sidecarProcess.isRunning {
-                WispLog.log("voice", "sidecar ignored SIGTERM for 1.5s — sending SIGKILL")
+                WispLog.log("voice", "sidecar ignored SIGTERM for 4s — sending SIGKILL")
                 kill(sidecarProcess.processIdentifier, SIGKILL)
             }
         }
