@@ -54,6 +54,19 @@ final class AppCoordinator: ObservableObject {
     // the shipped app's `_notchTextResponseAutoDismissDurationSeconds`.
     static let notchTextResponseAutoDismissDurationSeconds: Double = 4.0
 
+    // MARK: - Notch file-drag composer state (verified frame-by-frame from the drag-files demo)
+
+    // True while a file drag is hovering near/over the notch — the island opens into a dashed
+    // "Drop files here to attach" target.
+    @Published var isFileDropTargeted: Bool = false
+
+    // The files attached to the notch composer. Non-empty → the island presents the composer
+    // (file-type chips + an "ask Wisp…" input + amber send button).
+    @Published var composerFileURLs: [URL] = []
+
+    // The composer's draft text, bound to its text field.
+    @Published var composerDraftText: String = ""
+
     // Cancellable auto-dismiss for the expanded notch response text.
     private var notchAutoDismissTask: Task<Void, Never>?
 
@@ -168,12 +181,12 @@ final class AppCoordinator: ObservableObject {
     func handleFinalTranscript(_ finalText: String) {
         latestTranscript = finalText
         Task {
-            await respondToUserRequest(finalText)
+            await respondWithScreenContext(finalText)
         }
     }
 
-    // Captures the screen, asks Claude, streams the answer to TTS, and paints any teaching ink.
-    private func respondToUserRequest(_ userRequestText: String) async {
+    // Captures the screen, then runs the shared respond pipeline with those screenshots attached.
+    private func respondWithScreenContext(_ userRequestText: String) async {
         transition(to: .processing)
 
         // Attach a screenshot of every display so Claude can reason about what the user sees.
@@ -182,6 +195,14 @@ final class AppCoordinator: ObservableObject {
             guard let pngData = screenCapture.encodeToPNG(displayCapture.capturedImage) else { return nil }
             return ChatImageAttachment(base64EncodedImage: pngData.base64EncodedString(), mediaType: "image/png")
         }
+
+        await respondToUserRequest(userRequestText, imageAttachments: imageAttachments)
+    }
+
+    // The shared respond pipeline: asks Claude with the given attachments, streams the answer to
+    // TTS, and paints any teaching ink.
+    private func respondToUserRequest(_ userRequestText: String, imageAttachments: [ChatImageAttachment]) async {
+        transition(to: .processing)
 
         var accumulatedSpokenText = ""
         do {
@@ -237,6 +258,59 @@ final class AppCoordinator: ObservableObject {
             .first
             .map(String.init)?
             .trimmingCharacters(in: .whitespaces) ?? text.trimmingCharacters(in: .whitespaces)
+    }
+
+    // MARK: - Notch composer (drag files onto the notch → attach → ask)
+
+    // Files dropped onto the island's drop target. Ends the drop-target presentation and opens the
+    // composer with the attached files.
+    func attachComposerFiles(_ fileURLs: [URL]) {
+        isFileDropTargeted = false
+        composerFileURLs.append(contentsOf: fileURLs)
+    }
+
+    func cancelComposer() {
+        isFileDropTargeted = false
+        composerFileURLs.removeAll()
+        composerDraftText = ""
+    }
+
+    // Sends the composer's draft + attachments through the normal respond pipeline. Image files ride
+    // along as real Claude image blocks; other file types are named (with paths) in the message so
+    // the model knows what it was handed.
+    // ponytail: non-image files are referenced by name/path only — inline their text content when a
+    // file-reading pipeline lands.
+    func submitComposer() {
+        let draftText = composerDraftText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let attachedFileURLs = composerFileURLs
+        guard !draftText.isEmpty || !attachedFileURLs.isEmpty else { return }
+        cancelComposer()
+
+        Task {
+            let imageFileExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp"]
+            var imageAttachments: [ChatImageAttachment] = []
+            var nonImageFileNames: [String] = []
+
+            for fileURL in attachedFileURLs {
+                let fileExtension = fileURL.pathExtension.lowercased()
+                if imageFileExtensions.contains(fileExtension),
+                   let imageData = try? Data(contentsOf: fileURL) {
+                    let mediaType = fileExtension == "png" ? "image/png" : "image/\(fileExtension == "jpg" ? "jpeg" : fileExtension)"
+                    imageAttachments.append(
+                        ChatImageAttachment(base64EncodedImage: imageData.base64EncodedString(), mediaType: mediaType)
+                    )
+                } else {
+                    nonImageFileNames.append(fileURL.lastPathComponent)
+                }
+            }
+
+            var messageText = draftText.isEmpty ? "Tell me about the attached files." : draftText
+            if !nonImageFileNames.isEmpty {
+                messageText += "\n\n(Attached files: \(nonImageFileNames.joined(separator: ", ")))"
+            }
+
+            await respondToUserRequest(messageText, imageAttachments: imageAttachments)
+        }
     }
 
     // MARK: - Teaching ink
