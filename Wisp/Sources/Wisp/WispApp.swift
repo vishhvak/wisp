@@ -36,6 +36,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     // SwiftUI scene share exactly one.
     let appCoordinator = AppCoordinator()
 
+    // Held for the app's lifetime: an accessory app with no windows is a prime App Nap candidate,
+    // and a napped Wisp (or its napped Python child) turns push-to-talk into a 5–10s wait. The
+    // latency-critical assertion keeps the voice pipeline wake-ready.
+    private var appNapPreventionActivity: NSObjectProtocol?
+
     // True when Wisp is running from a real .app bundle (vs a bare `swift run` binary). Several
     // TCC-gated APIs (Speech Recognition especially) hard-abort the process when requested from an
     // unbundled binary, so permission REQUESTS are gated on this.
@@ -46,6 +51,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // .accessory = menu-bar/background app with NO dock icon and no default main menu window.
         NSApp.setActivationPolicy(.accessory)
+
+        appNapPreventionActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .latencyCritical],
+            reason: "Wisp voice pipeline must stay wake-ready for push-to-talk"
+        )
 
         // NOTE deliberately NOT requesting Speech Recognition here. For a bare terminal-launched
         // binary, TCC ABORTS the process on that request (__TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION__)

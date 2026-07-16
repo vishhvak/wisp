@@ -79,6 +79,10 @@ final class ParakeetWarmEngine: TranscriptionProvider {
         let daemonProcess = Process()
         daemonProcess.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         daemonProcess.arguments = [WispConfig.sidecarPythonExecutablePath, sidecarScriptPath]
+        // The daemon idles blocked on stdin between sessions, which makes it a prime App Nap
+        // victim — observed live: after ~9 idle minutes, a start command took 5–10s to open the
+        // mic because macOS had throttled the child. Interactive QoS keeps it wake-ready.
+        daemonProcess.qualityOfService = .userInteractive
 
         let standardInputPipe = Pipe()
         let standardOutputPipe = Pipe()
@@ -176,6 +180,9 @@ final class ParakeetWarmEngine: TranscriptionProvider {
 
     private func sendCommand(_ commandName: String) {
         guard let commandData = "{\"cmd\": \"\(commandName)\"}\n".data(using: .utf8) else { return }
+        // Timestamped so the log shows send→"listening" latency (the App Nap lag was found by
+        // exactly this gap; keep it observable).
+        WispLog.log("voice", "→ daemon: \(commandName)")
         sidecarStandardInput?.fileHandleForWriting.write(commandData)
     }
 
